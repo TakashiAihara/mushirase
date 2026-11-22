@@ -47,7 +47,12 @@ const RUNTIMES = new Set(["php", "python", "node", "go", "ruby", "java", "postgr
 
 // "Critical PHP update on Wednesday, October 21": a release named by the day it will happen.
 const ON_DAY = /\b(?:update|release)s? (?:on|for) (?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
-const PRE = new RegExp(`\\bupcoming\\b|\\bscheduled for\\b|\\bwill be released\\b|pre-?announce|advance notice|予告|${ON_DAY.source}`, "i");
+const PRE = /\bupcoming\b|\bscheduled for\b|\bwill be released\b|pre-?announce|advance notice|予告/i;
+const RELEASE_WORD = /\breleas\w*|\bupdates?\b|\bpatch\w*/i;
+
+// The title announces a release: upcoming / on a named day / with a version, and says release, update or patch
+// ("Upcoming changes to the support policy" does not).
+const releaseTitle = (title: string) => RELEASE_WORD.test(title) && (PRE.test(title) || ON_DAY.test(title) || VERSION_RELEASE.test(title));
 
 const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\breleas(?:e|ed|es)\b|\breleas(?:e|ed|es)\b.*\b\d+\.\d+/i;
 
@@ -56,7 +61,7 @@ const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\breleas(?:e|ed|es)\b|\breleas(
 function securityWording(item: FeedItem): string | null {
   const inTitle = item.title.match(SECURITY);
   if (inTitle) return `題名「${inTitle[0]}」`;
-  if (!PRE.test(item.title) && !VERSION_RELEASE.test(item.title)) return null;
+  if (!releaseTitle(item.title)) return null;
   const inBody = item.summary.match(SECURITY);
   return inBody ? `題名がリリース・予告で、本文「${inBody[0]}」` : null;
 }
@@ -106,7 +111,8 @@ function mentions(text: string, n: Name): boolean {
 }
 
 function kindOf(item: FeedItem): Kind {
-  return PRE.test(`${item.title} ${item.summary.slice(0, 600)}`) ? "pre-announcement" : "fix";
+  // A named day only counts in the title: a fix's body can say which day it shipped.
+  return PRE.test(`${item.title} ${item.summary.slice(0, 600)}`) || ON_DAY.test(item.title) ? "pre-announcement" : "fix";
 }
 
 // product: the feed belongs to one product, so its items need no mention of the name; version lines still apply.

@@ -28,6 +28,12 @@ const RSS_KEEP = 100;
 
 const entriesFor = (r: RssConfig, sent: Sent[]) => (r.kind ? sent.filter(({ notice }) => kindOf(notice) === r.kind) : sent);
 
+// The feed id comes from the title, so split feeds without a title still get distinct ids.
+const titleOf = (r: RssConfig) => r.title ?? (r.kind ? `mushirase ${r.kind}` : "mushirase");
+
+// Credentials may sit in the URL, so the log names only the host and path.
+const where = (url: string) => URL.canParse(url) ? `${new URL(url).host}${new URL(url).pathname}` : "(invalid url)";
+
 // Feeds are independent sources, so the same guid in two feeds must not suppress each other.
 const seenKey = (item: FeedItem) => `${item.feed}\n${item.id}`;
 
@@ -143,20 +149,20 @@ program
       // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
       // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
-      for (const r of rssFeeds) if (r.path) writeAtom(at(r.path), r.title ?? "mushirase", entriesFor(r, state.sent.slice(0, RSS_KEEP)));
+      for (const r of rssFeeds) if (r.path) writeAtom(at(r.path), titleOf(r), entriesFor(r, state.sent.slice(0, RSS_KEEP)));
     }
 
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
       for (const r of rssFeeds) {
-        if (r.path) writeAtom(at(r.path), r.title ?? "mushirase", entriesFor(r, state.sent));
+        if (r.path) writeAtom(at(r.path), titleOf(r), entriesFor(r, state.sent));
         if (!r.upload) continue;
         try {
-          await uploadAtom(r.upload, atom(r.title ?? "mushirase", entriesFor(r, state.sent)));
+          await uploadAtom(r.upload, atom(titleOf(r), entriesFor(r, state.sent)));
         } catch (e) {
           failures++;
-          console.error(`rss upload failed (${r.upload.url}): ${(e as Error).message}`);
+          console.error(`rss upload failed (${where(r.upload.url)}): ${(e as Error).message}`);
         }
       }
     }

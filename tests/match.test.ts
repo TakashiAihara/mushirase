@@ -288,3 +288,14 @@ describe("releases named by their day", () => {
     expect(match(item("Security support for Drupal core minor versions reduced to 8 months", "security fixes will take longer"), [a("drupal/core", "10")], "drupal/core")).toBeNull();
   });
 });
+
+describe("release titles", () => {
+  test("an upcoming policy change is not a release, even if its body mentions vulnerabilities", () => {
+    expect(match(item("Upcoming changes to Drupal core support policy", "Security fixes for vulnerabilities will take longer."), [a("drupal/core", "10")], "drupal/core")).toBeNull();
+  });
+
+  test("a fix whose body names the day it shipped stays a fix", () => {
+    const n = match(item("PHP 8.3.30 Released", "This is a security release. It was the security release for Wednesday, October 21."), [a("php", "8.3")], "php");
+    expect(n?.kind).toBe("fix");
+  });
+});

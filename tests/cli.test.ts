@@ -97,7 +97,7 @@ test("the feed is PUT to the upload URL with basic auth, and a rejected upload e
   status = 403;
   const rejected = await run({ U: "writer", P: "secret" });
   expect(rejected.code).toBe(1);
-  expect(rejected.err).toContain("upload HTTP 403");
+  expect(rejected.err).toContain(`rss upload failed (127.0.0.1:${server.port}/dav/feed.atom): upload HTTP 403`);
   expect(rejected.out).toContain("0 hit, 1 failure(s)");
 
   status = 302;
@@ -147,4 +147,8 @@ test("rss split by kind writes pre-announcements and fixes to separate feeds", a
   expect(fix).not.toContain("Upcoming");
   expect(all).toContain("Upcoming");
   expect(all).toContain("8.3.30");
+  const idOf = (xml: string) => xml.match(/<feed[^>]*>\s*<id>([^<]+)<\/id>/)?.[1];
+  expect(idOf(pre)).toBe("urn:mushirase:mushirase%20pre-announcement");
+  expect(idOf(fix)).toBe("urn:mushirase:mushirase%20fix");
+  expect(idOf(all)).toBe("urn:mushirase:mushirase");
 });
