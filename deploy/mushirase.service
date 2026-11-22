@@ -1,0 +1,17 @@
+[Unit]
+Description=Push security notices that hit the inventory
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mushirase/mushirase.env
+# ProtectHome hides home directories, so bun and the checkout must live outside them.
+ExecStart=/usr/local/bin/bun /opt/mushirase/src/cli.ts run -c /etc/mushirase/mushirase.yaml
+TimeoutStartSec=15min
+StateDirectory=mushirase
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

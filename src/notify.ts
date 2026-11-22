@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { authHeader } from "./llm";
 import type { Notice } from "./types";
@@ -50,7 +50,9 @@ export function atom(title: string, sent: Sent[]): string {
   return `<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n  <id>urn:mushirase:${x(encodeURIComponent(title))}</id>\n  <title>${x(title)}</title>\n  <updated>${updated}</updated>\n  <author><name>mushirase</name></author>\n${entries.join("\n")}\n</feed>\n`;
 }
 
+// Written to a temporary file and renamed, so a reader never sees a half-written feed.
 export function writeAtom(path: string, title: string, sent: Sent[]): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, atom(title, sent));
+  writeFileSync(`${path}.tmp`, atom(title, sent));
+  renameSync(`${path}.tmp`, path);
 }
