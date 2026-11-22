@@ -60,11 +60,10 @@ const PRE = /\bupcoming\b|\bscheduled for\b|\bwill be released\b|pre-?announce|a
 const RELEASE_WORD = /\breleas\w*|\bupdates?\b|\bpatch\w*/i;
 
 // The title announces a release: upcoming / on a named day / with a version, and says release, update or patch
-// ("Upcoming changes to the support policy" and "10.3 patch support policy update" do not).
-// Only support in the sense of a policy: "released with Windows support" is still a release.
-const NOT_RELEASE = /\bpolic(?:y|ies)\b|\bsupport (?:policy|period|window|for)\b|end[- ]of[- ]life|\blifecycle\b/i;
-const releaseTitle = (title: string) =>
-  RELEASE_WORD.test(title) && !NOT_RELEASE.test(title) && (PRE.test(title) || ON_DAY.test(title) || VERSION_RELEASE.test(title));
+// ("Upcoming changes to the support policy" does not).
+// NOTE: a versioned policy post ("10.3 patch support policy update") passes and gets pushed; excluding policy words
+// also dropped real releases ("released with Windows support", "Content Security Policy fixes"), the worse direction.
+const releaseTitle = (title: string) => RELEASE_WORD.test(title) && (PRE.test(title) || ON_DAY.test(title) || VERSION_RELEASE.test(title));
 
 const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\b(?:releas(?:e|ed|es)|updates?|patch(?:es|ed)?)\b|\b(?:releas(?:e|ed|es)|updates?|patch(?:es|ed)?)\b.*\b\d+\.\d+/i;
 
