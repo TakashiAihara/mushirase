@@ -70,7 +70,7 @@ program
     const maxAge = Number(opts.maxAge ?? cfg.maxAgeDays ?? 7);
     if (!Number.isFinite(maxAge) || maxAge <= 0) throw new Error(`max age must be a positive number of days, got ${opts.maxAge ?? cfg.maxAgeDays}`);
     const cutoff = Date.now() - maxAge * 86_400_000;
-    // shortcut: entries are kept for 90 days or maxAge, whichever is longer; a date-less item older than that would be pushed again.
+    // NOTE: entries are kept for 90 days or maxAge, whichever is longer; a date-less item older than that would be pushed again.
     const keepSince = Date.now() - Math.max(maxAge, 90) * 86_400_000;
     if (!opts.dryRun) for (const [k, when] of Object.entries(state.seen)) if (Date.parse(when) < keepSince) delete state.seen[k];
     let failures = 0;
@@ -90,7 +90,7 @@ program
         const key = seenKey(item);
         if (Object.hasOwn(state.seen, key)) continue;
         const t = item.published ? Date.parse(item.published) : NaN;
-        // shortcut: items without a parsable date are treated as new; add a per-feed date override if a feed lacks dates.
+        // NOTE: items without a parsable date are treated as new; add a per-feed date override if a feed lacks dates.
         if (!Number.isNaN(t) && t < cutoff) continue;
         checked++;
         const n = match(item, assets, f.product);

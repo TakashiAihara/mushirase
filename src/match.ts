@@ -31,14 +31,14 @@ const LINE_ONLY: Record<string, string[]> = { go: ["Go"] };
 // Aliases that are also common words when lower-cased ("react to"). LINE_ONLY names are always case-sensitive.
 const CASE_SENSITIVE = new Set(["React", "Rails"]);
 
-// shortcut: plain names shorter than this are skipped in free text (too many accidental hits), add aliases when one matters.
+// NOTE: plain names shorter than this are skipped in free text (too many accidental hits), add aliases when one matters.
 const MIN_NAME_LEN = 4;
 
 // A bare "security" also fires on policy posts ("security reporting update"), so it only counts in these pairs or as a subject tag.
 const SECURITY = /security (?:release|update|fix|patch|issue|bulletin)|\[security\]|^security:|vulnerab|\bCVE-\d|advisor|exploit|malware|malicious|compromis|backdoor|supply[- ]chain|脆弱性/im;
 
 // A malicious version is new by definition, and a manifest range like ^4.3 can resolve to it.
-// shortcut: decided per item, not per mention, so a supply-chain post citing another version of the same library still hits.
+// NOTE: decided per item, not per mention, so a supply-chain post citing another version of the same library still hits.
 const SUPPLY_CHAIN = /malicious|malware|compromis|backdoor/i;
 
 // Runtimes are named in passing by notices about libraries written for them ("S3 Encryption Client for PHP"),
@@ -62,7 +62,7 @@ function namesFor(asset: Asset): Name[] {
 const BEFORE = String.raw`(?<![\w.-])`;
 
 // Dotted versions only, so years, counts and dates after a name ("PHP 2026", "OpenSSL 3 months", "PHP 19 November") are not versions.
-// shortcut: a suffixed version ("PHP 8.4-rc1", "8.3.30-1ubuntu1", "8.3.30~rc1") is not read at all, and neither is a bare major ("Node.js 22").
+// NOTE: a suffixed version ("PHP 8.4-rc1", "8.3.30-1ubuntu1", "8.3.30~rc1") is not read at all, and neither is a bare major ("Node.js 22").
 const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+)(?![\w~+-]|\.\w)`;
 
 // Version lines written right after the product name ("PHP 8.3.28 and 8.4.15"), so CVSS scores do not count.
@@ -79,7 +79,7 @@ export function mentionedLines(text: string, name: string, caseSensitive = false
 
 // A version named in a notice is usually the fixed one ("PHP 8.3.30 released"), and everyone on 8.3 below it needs it,
 // so it is compared as its line (8.3.x) against the asset's npm semver range, by semver itself.
-// shortcut: the whole line hits, so a user already past the fix (8.3.35) is pushed too; reading "fixed in" vs "affected" needs the text.
+// NOTE: the whole line hits, so a user already past the fix (8.3.35) is pushed too; reading "fixed in" vs "affected" needs the text.
 export function lineHits(spec: string, mentioned: string[]): boolean {
   if (!semver.validRange(spec)) throw new Error(`unsupported version spec: ${spec}`);
   return mentioned.some((v) => {
