@@ -14,8 +14,8 @@ function lineOf(spec: string): string | undefined {
 type Eco = "npm" | "composer" | "python";
 
 // npm specs are semver ranges and kept as written. Composer and PEP 440 ranges are not semver (">1.4" means >1.4.0 there,
-// "~1.2" means >=1.2 <2, "|" is OR), and rewriting them kept drifting, so only an exact pin ("1.2.3", "==1.2.3") is kept;
-// any other range leaves the asset without a version, which matches by name and errs towards pushing.
+// "~1.2" means >=1.2 <2, "|" is OR), and rewriting them kept drifting, so only a pin ("1.2.3", "==1.2.3") is kept;
+// a partial pin ("==1.4") is kept as its line, and any other range leaves the asset without a version (name match, errs towards pushing).
 function toRange(spec: string, eco: Eco): string | undefined {
   const s = spec.trim();
   if (eco === "npm") return semver.validRange(s) ? s : undefined;

@@ -79,6 +79,7 @@ export function mentionedLines(text: string, name: string, caseSensitive = false
 
 // A version named in a notice is usually the fixed one ("PHP 8.3.30 released"), and everyone on 8.3 below it needs it,
 // so it is compared as its line (8.3.x) against the asset's npm semver range, by semver itself.
+// shortcut: the whole line hits, so a user already past the fix (8.3.35) is pushed too; reading "fixed in" vs "affected" needs the text.
 export function lineHits(spec: string, mentioned: string[]): boolean {
   if (!semver.validRange(spec)) throw new Error(`unsupported version spec: ${spec}`);
   return mentioned.some((v) => {
