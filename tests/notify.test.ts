@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { atom, hitsLine, render } from "../src/notify";
+import { atom, hitsLine, render, uploadAtom } from "../src/notify";
 import type { Notice } from "../src/types";
 
 const notice = (feed: string, id: string): Notice => ({
@@ -31,4 +31,20 @@ test("control characters that XML 1.0 forbids are dropped from the Atom feed", (
   const n = notice("php", "1");
   n.item.title = "bad\u0001title\u000b end";
   expect(atom("t", [{ notice: n, at: "2026-11-22T00:00:00.000Z" }])).toContain("<title>[予告] badtitle end</title>");
+});
+
+test("credentials are refused for a plain-http upload URL that is not this machine", async () => {
+  process.env.MUSHIRASE_TEST_U = "u";
+  process.env.MUSHIRASE_TEST_P = "p";
+  try {
+    const cfg = { url: "http://dav.example.com/feed.atom", userEnv: "MUSHIRASE_TEST_U", passwordEnv: "MUSHIRASE_TEST_P" };
+    await expect(uploadAtom(cfg, "x")).rejects.toThrow("credentials are only sent over https or to localhost, got http://dav.example.com");
+  } finally {
+    delete process.env.MUSHIRASE_TEST_U;
+    delete process.env.MUSHIRASE_TEST_P;
+  }
+});
+
+test("credentials embedded in a plain-http upload URL are refused too", async () => {
+  await expect(uploadAtom({ url: "http://writer:pw@dav.example.com/feed.atom" }, "x")).rejects.toThrow("credentials are only sent over https or to localhost");
 });

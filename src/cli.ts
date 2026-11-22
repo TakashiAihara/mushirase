@@ -6,7 +6,7 @@ import { fetchFeed } from "./feeds";
 import { loadInventory, scan } from "./inventory";
 import { judge, type LlmConfig } from "./llm";
 import { match } from "./match";
-import { hitsLine, render, sendNtfy, writeAtom, type NtfyConfig, type Sent } from "./notify";
+import { atom, hitsLine, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
 import type { FeedItem, Notice } from "./types";
 
 type Config = {
@@ -15,7 +15,7 @@ type Config = {
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
-  rss?: { path: string; title?: string };
+  rss?: { path?: string; title?: string; upload?: UploadConfig };
   state?: string;
 };
 
@@ -137,15 +137,23 @@ program
       // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
       // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
-      if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
+      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
     }
 
-    console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
-      if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
+      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
+      if (cfg.rss?.upload) {
+        try {
+          await uploadAtom(cfg.rss.upload, atom(cfg.rss.title ?? "mushirase", state.sent));
+        } catch (e) {
+          failures++;
+          console.error(`rss upload failed: ${(e as Error).message}`);
+        }
+      }
     }
+    console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
     if (failures > 0) process.exit(1);
   });
 

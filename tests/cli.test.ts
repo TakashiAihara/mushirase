@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,4 +51,70 @@ test("a run stopped after the first push keeps it recorded, and the next run pus
 
   expect(titles.slice(2)).toEqual(["[予告] Upcoming PHP Security Release 2"]);
   expect(existsSync(join(dir, "state.json"))).toBe(true);
+});
+
+test("the feed is PUT to the upload URL with basic auth, and a rejected upload exits 1", async () => {
+  const puts: { path: string; auth: string | null; type: string | null; body: string }[] = [];
+  let status = 201;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === "/feed") return new Response(rss.replace(/Release (\d)/g, "Release up$1"));
+      if (req.method === "PUT") {
+        puts.push({ path, auth: req.headers.get("authorization"), type: req.headers.get("content-type"), body: await req.text() });
+        return status === 302 ? new Response(null, { status, headers: { location: "/elsewhere" } }) : new Response(null, { status });
+      }
+      return new Response("{}");
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const up = join(dir, "upload");
+  mkdirSync(up);
+  writeFileSync(join(up, "stack.yaml"), 'assets:\n  - { name: php, version: "8.3" }\n');
+  const cfg = (auth: string, path = "path: feed.atom, ") =>
+    writeFileSync(join(up, "cfg.yaml"), `inventory: [stack.yaml]\nfeeds:\n  - { name: php, url: "${base}/feed", product: php }\nntfy: { url: "${base}", topic: t }\nrss: { ${path}upload: { url: "${base}/dav/feed.atom"${auth} } }\nstate: state.json\n`);
+  const run = async (env: Record<string, string>) => {
+    const clean = { ...process.env };
+    delete clean.U;
+    delete clean.P;
+    const p = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "run", "-c", join(up, "cfg.yaml")], { env: { ...clean, ...env }, stdout: "pipe", stderr: "pipe" });
+    const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    return { out, err, code };
+  };
+
+  cfg(", userEnv: U, passwordEnv: P");
+  expect((await run({ U: "writer", P: "secret" })).code).toBe(0);
+  expect(puts.length).toBe(1);
+  expect(puts[0].path).toBe("/dav/feed.atom");
+  expect(puts[0].auth).toBe("Basic " + Buffer.from("writer:secret").toString("base64"));
+  expect(puts[0].type).toBe("application/atom+xml; charset=utf-8");
+  expect(puts[0].body).toStartWith('<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">');
+  expect(puts[0].body).toContain("<title>[予告] Upcoming PHP Security Release up1</title>");
+  expect(puts[0].body).toContain("<title>[予告] Upcoming PHP Security Release up2</title>");
+
+  status = 403;
+  const rejected = await run({ U: "writer", P: "secret" });
+  expect(rejected.code).toBe(1);
+  expect(rejected.err).toContain("rss upload failed: upload HTTP 403");
+  expect(rejected.out).toContain("0 hit, 1 failure(s)");
+
+  status = 302;
+  const redirected = await run({ U: "writer", P: "secret" });
+  expect(redirected.code).toBe(1);
+  expect(puts.map((p) => p.path)).toEqual(["/dav/feed.atom", "/dav/feed.atom", "/dav/feed.atom"]);
+
+  status = 201;
+  const missing = await run({ U: "writer" });
+  expect(missing.code).toBe(1);
+  expect(missing.err).toContain("upload: P not set (basic auth needs both)");
+  expect(puts.length).toBe(3);
+
+  cfg("", "");
+  expect((await run({})).code).toBe(0);
+  expect(puts.length).toBe(4);
+  expect(puts[3].auth).toBeNull();
+
+  server.stop(true);
 });
