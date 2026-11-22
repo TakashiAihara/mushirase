@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
+import { SPEC } from "./match";
 import type { Asset } from "./types";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor", "dist", "build", ".venv"]);
@@ -8,16 +9,17 @@ function lineOf(spec: string): string | undefined {
   return spec.match(/\d+(?:\.\d+)?/)?.[0];
 }
 
-// Ranges keep their operator so matching can treat them as ranges: ^ and Python's ~= (compatible release) as "^",
-// a lower bound as ">="; npm's ~ and exact pins keep only the line.
-// shortcut: compound ranges ("^1 || ^2", "1.2 - 2.0") keep the first bound only.
-function lineOfRange(spec: string): string | undefined {
-  const line = lineOf(spec);
-  // An upper bound or an exclusion ("<2", "!=1.4") says nothing about what is installed.
-  if (!line || /^\s*[<!]/.test(spec)) return undefined;
-  const op = spec.trim().match(/^(\^|~=|>=?)/)?.[1];
-  if (op === "^" || op === "~=") return `^${line}`;
-  if (op) return `>=${line}`;
+// Ranges keep their operator so matching can treat them as ranges. In Composer and Python (tildeMajor) a tilde on two parts
+// (~8.3, ~=2.2) means "this major", like ^; npm's tilde and any tilde on three parts (~3.22.1, ~=2.2.1) pin the minor, so only the line is kept.
+// shortcut: compound and closed ranges (">=3.11,<3.13", "^1 || ^2", "1.2 - 2.0") keep the first bound only.
+function lineOfRange(spec: string, tildeMajor = false): string | undefined {
+  const s = spec.trim();
+  const line = lineOf(s);
+  if (!line || s.startsWith("!")) return undefined;
+  const op = s.match(/^(\^|~=?|>=|>|<=|<)/)?.[1];
+  const parts = s.match(/\d+(?:\.\d+)*/)![0].split(".").length;
+  if (op === "^" || (tildeMajor && op?.startsWith("~") && parts === 2)) return `^${line}`;
+  if (op && !op.startsWith("~")) return `${op}${line}`;
   return line;
 }
 
@@ -37,7 +39,7 @@ function fromComposerJson(text: string, src: string): Asset[] {
   const j = JSON.parse(text);
   return Object.entries<string>(j.require ?? {}).map(([name, spec]) => ({
     name,
-    version: lineOfRange(String(spec)),
+    version: lineOfRange(String(spec), true),
     source: src,
   }));
 }
@@ -62,7 +64,7 @@ function fromRequirements(text: string, src: string): Asset[] {
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
       const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!]=?\s*[\d.]+)?/);
-      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? lineOfRange(m[2]) : undefined, source: src };
+      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? lineOfRange(m[2], true) : undefined, source: src };
     });
 }
 
@@ -70,7 +72,7 @@ function fromPyproject(text: string, src: string): Asset[] {
   const t = Bun.TOML.parse(text) as { project?: { dependencies?: string[]; "requires-python"?: string } };
   const out = fromRequirements((t.project?.dependencies ?? []).join("\n"), src);
   const py = t.project?.["requires-python"];
-  if (py) out.push({ name: "python", version: lineOfRange(py), source: src });
+  if (py) out.push({ name: "python", version: lineOfRange(py, true), source: src });
   return out;
 }
 
@@ -155,6 +157,7 @@ export function loadInventory(paths: string[]): Asset[] {
     for (const a of doc.assets ?? []) {
       // An unquoted 8.10 is the number 8.1 by the time it is read, so only strings are accepted.
       if (a.version != null && typeof a.version !== "string") throw new Error(`${p}: quote the version of ${a.name} ("${a.version}")`);
+      if (a.version != null && !SPEC.test(a.version)) throw new Error(`${p}: version of ${a.name} must be like "8.3", "^15.0", ">=22" or "<2", got "${a.version}"`);
       out.push({ ...a, source: a.source ?? basename(p) });
     }
   }

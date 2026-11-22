@@ -113,6 +113,14 @@ describe("mentionedLines", () => {
     expect(mentionedLines("PHP 2026 roadmap, PHP 64-bit builds, PHP 19 November, PHP 8.4-rc1, PHP 8.3.30-1ubuntu1", "PHP")).toEqual([]);
   });
 
+  test("reads versions after the word versions", () => {
+    expect(mentionedLines("PHP versions 8.3.30 and 8.4.16 are affected", "PHP")).toEqual(["8.3.30", "8.4.16"]);
+  });
+
+  test("does not read pre-release or build suffixes as the release", () => {
+    expect(mentionedLines("PHP 8.3.30~rc1 and PHP 8.3.30+build5", "PHP")).toEqual([]);
+  });
+
   test("reads a version at the end of a sentence", () => {
     expect(mentionedLines("Upgrade to PHP 8.3.30.", "PHP")).toEqual(["8.3.30"]);
   });
@@ -127,9 +135,20 @@ describe("lineHits", () => {
     expect(lineHits("^0.4", ["0.5.0"])).toBe(false);
   });
 
-  test("a lower bound covers every later version", () => {
+  test("bounds compare against the boundary itself", () => {
     expect(lineHits(">=22.0", ["23.1.0"])).toBe(true);
+    expect(lineHits(">=22.0", ["22.0"])).toBe(true);
     expect(lineHits(">=22.0", ["20.18.1"])).toBe(false);
+    expect(lineHits(">22.0", ["22.0"])).toBe(false);
+    expect(lineHits(">22.0", ["22.1"])).toBe(true);
+    expect(lineHits("<2", ["1.9.3"])).toBe(true);
+    expect(lineHits("<2", ["2.0.1"])).toBe(false);
+    expect(lineHits("<=1.4", ["1.4"])).toBe(true);
+    expect(lineHits("<=1.4", ["1.5"])).toBe(false);
+  });
+
+  test("an unsupported spec is an error, not a silent miss", () => {
+    expect(() => lineHits("~8.3", ["8.3.1"])).toThrow("unsupported version spec");
   });
 
   test("an exact line, a patch under the line, a major covering the line, and a wildcard all overlap", () => {
@@ -160,8 +179,24 @@ describe("names", () => {
     expect(match(item("Security advisory for Express"), [a("Express")])).not.toBeNull();
   });
 
-  test("React matches when capitalised", () => {
+  test("React and Rails match only when capitalised, with or without a version", () => {
     expect(match(item("React 19.1.2 fixes CVE-2026-8"), [a("react", "19")])?.hits.map((h) => h.name)).toEqual(["react"]);
+    expect(match(item("CVE-2026-8: react 19.1.2 times faster"), [a("react", "19")])).toBeNull();
+    expect(match(item("Security fix: on rails 7.1.2 trains"), [a("rails", "7.1")])).toBeNull();
+    expect(match(item("Rails 7.1.2 fixes CVE-2026-9"), [a("rails", "7.1")])).not.toBeNull();
+  });
+
+  test("a version after a lower-cased unambiguous alias is read", () => {
+    expect(match(item("openssl 3.0.16 fixes CVE-2026-4"), [a("openssl", "3.0")])).not.toBeNull();
+    expect(match(item("openssl 3.1.4 fixes CVE-2026-4"), [a("openssl", "3.0")])).toBeNull();
+  });
+
+  test("a user-written capitalised name keeps its case for versions too", () => {
+    expect(match(item("CVE-2026-10: express 4.18.2 delivery"), [a("Express", "4.18")])).toBeNull();
+  });
+
+  test("a library name prefixed by a hyphen is a different package", () => {
+    expect(match(item("Security advisory for non-debug builds"), [a("debug", "4.3")])).toBeNull();
   });
 
   test("a composer caret range on PHP reaches a later minor's release and not an earlier one", () => {

@@ -18,9 +18,14 @@ function repo(name: string, files: Record<string, string>): string {
 
 const spec = (dir: string) => Object.fromEntries(scan(dir).map((a) => [a.name, a.version ?? null]));
 
-test("ranges keep their operator, npm tilde and exact pins keep the line, upper bounds are dropped", () => {
-  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", tiny: "^0.4.1", old: "<2" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
-  expect(spec(dir)).toEqual({ next: "^15.0", zod: "3.22", tiny: "^0.4", old: null, left: "2.1", node: ">=22.0" });
+test("npm ranges keep their operator, npm tilde and exact pins keep the line, exclusions are dropped", () => {
+  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", ms: "~2.1", tiny: "^0.4.1", old: "<2", newer: ">1.4", not: "!=1.4" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
+  expect(spec(dir)).toEqual({ next: "^15.0", zod: "3.22", ms: "2.1", tiny: "^0.4", old: "<2", newer: ">1.4", not: null, left: "2.1", node: ">=22.0" });
+});
+
+test("a Composer tilde on two parts covers the major, on three parts the minor", () => {
+  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3" } }) });
+  expect(spec(dir)).toEqual({ php: "^8.3", "laravel/framework": "11.2", "drupal/core": "^10.3" });
 });
 
 test("go.mod keeps direct requires and the go line, not indirect, replace or exclude", () => {
@@ -29,7 +34,7 @@ test("go.mod keeps direct requires and the go line, not indirect, replace or exc
 });
 
 test("requirements with extras keep their version", () => {
-  expect(spec(repo("py", { "requirements.txt": "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\n-e ./local\n" }))).toEqual({ django: ">=5.1", requests: "2.32", urllib3: "^2.2" });
+  expect(spec(repo("py", { "requirements.txt": "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\n-e ./local\n" }))).toEqual({ django: ">=5.1", requests: "2.32", urllib3: "^2.2", idna: "3.7" });
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {
@@ -56,6 +61,8 @@ test("an unquoted numeric version in a hand-written inventory is rejected", () =
   const f = join(root, "stack.yaml");
   writeFileSync(f, "assets:\n  - { name: php, version: 8.10 }\n");
   expect(() => loadInventory([f])).toThrow('quote the version of php');
+  writeFileSync(f, 'assets:\n  - { name: php, version: "~8.3" }\n');
+  expect(() => loadInventory([f])).toThrow('version of php must be like');
   writeFileSync(f, 'assets:\n  - { name: php, version: "8.10" }\n');
   expect(loadInventory([f])).toEqual([{ name: "php", version: "8.10", source: "stack.yaml" }]);
 });

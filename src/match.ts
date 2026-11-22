@@ -60,14 +60,14 @@ function namesFor(asset: Asset): Name[] {
 
 const BEFORE = String.raw`(?<![\w.-])`;
 
-// Dotted versions only, so years, counts and dates after a name ("PHP 2026", "OpenSSL 3 months", "PHP 19 November") are not versions,
-// and a suffixed one ("PHP 8.4-rc1") is not read as a shorter line.
-const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+)(?![\w-]|\.\w)`;
+// Dotted versions only, so years, counts and dates after a name ("PHP 2026", "OpenSSL 3 months", "PHP 19 November") are not versions.
+// shortcut: a suffixed version ("PHP 8.4-rc1", "8.3.30-1ubuntu1", "8.3.30~rc1") is not read at all, and neither is a bare major ("Node.js 22").
+const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+)(?![\w~+-]|\.\w)`;
 
 // Version lines written right after the product name ("PHP 8.3.28 and 8.4.15"), so CVSS scores do not count.
 export function mentionedLines(text: string, name: string, caseSensitive = false): string[] {
   const sep = String.raw`\s*(?:,\s*(?:and|or)?|and|or|/|&)\s*`;
-  const re = new RegExp(String.raw`${BEFORE}${esc(name)}\s+${VER}((?:${sep}${VER})*)`, caseSensitive ? "g" : "gi");
+  const re = new RegExp(String.raw`${BEFORE}${esc(name)}\s+(?:versions?\s+)?${VER}((?:${sep}${VER})*)`, caseSensitive ? "g" : "gi");
   const out: string[] = [];
   for (const m of text.matchAll(re)) {
     out.push(m[1]);
@@ -84,15 +84,31 @@ function cmp(a: number[], b: number[]): number {
   return 0;
 }
 
-// spec is a line ("8.3"), a caret range ("^15.0": same major, this minor or later) or a lower bound (">=22").
+export const SPEC = /^(\^|>=|>|<=|<)?(\d+(?:\.\d+)*)$/;
+
+// spec is a line ("8.3"), a caret range ("^15.0": same major, this minor or later; "^0.4" stays on 0.4 as npm's caret does)
+// or a bound (">=22", ">22", "<2", "<=1.4").
 export function lineHits(spec: string, mentioned: string[]): boolean {
-  const m = spec.match(/^(\^|>=?)?(.*)$/)!;
+  const m = spec.match(SPEC);
+  if (!m) throw new Error(`unsupported version spec: ${spec}`);
   const base = nums(m[2]);
   return mentioned.some((raw) => {
     const v = nums(raw.replace(/\.x$/, ""));
-    if (m[1] === "^" && base[0] !== 0) return v[0] === base[0] && cmp(v, base) >= 0;
-    if (m[1]?.startsWith(">")) return cmp(v, base) >= 0;
-    return cmp(v, base) === 0;
+    const c = cmp(v, base);
+    switch (m[1]) {
+      case "^":
+        return base[0] === 0 ? c === 0 : v[0] === base[0] && c >= 0;
+      case ">=":
+        return c >= 0;
+      case ">":
+        return c > 0;
+      case "<=":
+        return c <= 0;
+      case "<":
+        return c < 0;
+      default:
+        return c === 0;
+    }
   });
 }
 

@@ -30,6 +30,16 @@ test("an escaped RSS description is decoded and its tags removed", () => {
   expect(parseFeed(xml, "f")[0].summary).toBe("affects < 8.3.30");
 });
 
+test("RSS content:encoded is preferred over the description", () => {
+  const xml = `<rss><channel><item><guid>g</guid><title>t</title><description>short</description><content:encoded><![CDATA[<p>full body</p>]]></content:encoded></item></channel></rss>`;
+  expect(parseFeed(xml, "f")[0].summary).toBe("full body");
+});
+
+test("Atom summary is used when there is no content", () => {
+  const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>4</id><title>t</title><summary type="text">only a summary</summary></entry></feed>`;
+  expect(parseFeed(xml, "f")[0].summary).toBe("only a summary");
+});
+
 test("a document that is not a feed is an error", () => {
   expect(() => parseFeed("<html><body/></html>", "f")).toThrow("not an RSS/Atom feed");
 });
