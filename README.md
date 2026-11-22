@@ -45,6 +45,29 @@ bun run src/cli.ts run -c examples/mushirase.yaml                          # pus
 
 `run` exits 1 when a feed or a push fails. A failed push is not recorded, so the next run retries it while the item is still in the feed and within `maxAgeDays`.
 
+## Running on a schedule
+
+`deploy/` has a systemd service and an hourly timer. The checkout and bun must live outside home directories (`ProtectHome=yes`).
+
+```bash
+git clone https://github.com/TakashiAihara/mushirase /opt/mushirase
+(cd /opt/mushirase && bun install --frozen-lockfile --production)
+install -d -m 755 /etc/mushirase
+install -m 600 /opt/mushirase/deploy/mushirase.env.example /etc/mushirase/mushirase.env
+install -m 644 /opt/mushirase/deploy/mushirase.yaml.example /etc/mushirase/mushirase.yaml
+install -m 644 /opt/mushirase/examples/stack.yaml /etc/mushirase/stack.yaml
+install -m 644 /opt/mushirase/deploy/mushirase.service /opt/mushirase/deploy/mushirase.timer /etc/systemd/system/
+```
+
+Fill in the token and the ntfy URL, edit `stack.yaml`, check with a dry run, then enable the timer:
+
+```bash
+/usr/local/bin/bun /opt/mushirase/src/cli.ts run -c /etc/mushirase/mushirase.yaml --dry-run
+systemctl daemon-reload && systemctl enable --now mushirase.timer
+```
+
+The first run pushes what matched in the last `maxAgeDays`. Failures show in `systemctl --failed` and `journalctl -u mushirase`. To stop: `systemctl disable --now mushirase.timer`.
+
 ## Configuration
 
 See `examples/mushirase.yaml` and `examples/stack.yaml`. Paths are relative to the config file.
