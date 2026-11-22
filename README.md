@@ -18,13 +18,14 @@ flowchart LR
   L --> N[ntfy push + Atom feed]
 ```
 
-- Inventory: hand-written YAML for what no manifest declares, plus repository checkouts scanned for `package.json`, `composer.json`, `go.mod`, `requirements.txt`, `pyproject.toml`, `Dockerfile*`, `.mise.toml`, `.tool-versions` (direct dependencies only).
-- Project feeds (`product:` set) are about one product, so every item concerns it and only the security wording is checked.
-- General feeds need the item to name an asset. Ambiguous names are matched by how notices write them (`next` → `Next.js`, `go` → `Golang`); plain names shorter than 4 characters are skipped.
+- Inventory: hand-written YAML for what no manifest declares, plus repository checkouts scanned for `package.json`, `composer.json`, `go.mod`, `requirements.txt`, `pyproject.toml`, `Dockerfile*`, `.mise.toml`, `.tool-versions` (direct dependencies only). Quote versions in YAML (`"8.10"`); an unquoted number is rejected because `8.10` would be read as `8.1`.
+- A caret or lower-bound range (`^15.0.0`, `>=22`) becomes the major line `15`; an exact or tilde spec keeps the minor (`~3.22.1` → `3.22`).
+- Project feeds (`product:` set) are about one product, so their items need not name it; version lines still apply. Spellings from different manifests are unified (`nodejs` = `node`, `golang` = `go`, `postgres` = `postgresql`).
+- General feeds need the item to name an asset. Ambiguous names are matched by how notices write them (`next` → `Next.js`, `go` → `Golang`, or `Go` followed by a version); plain names shorter than 4 characters are skipped.
 - Version lines are read only when written right after the name (`PHP 8.4.16 and 8.3.30`), so CVSS scores and dates do not count. An item naming other lines is dropped.
-- Runtimes (PHP, Python, Node.js, PostgreSQL, ...) outside their own feed need an overlapping version line, because library notices name them in passing ("S3 Encryption Client for PHP").
+- Runtimes (PHP, Python, Node.js, PostgreSQL, ...) outside their own feed need a version line (overlapping the asset's, when it has one), because library notices name them in passing ("S3 Encryption Client for PHP").
 - Supply-chain items (malicious / compromised) skip the line check for libraries: a manifest range like `^4.3` can resolve to the new malicious version.
-- Items already seen are remembered in a state file; items older than `maxAgeDays` are ignored.
+- Items already seen are remembered per feed in a state file for 90 days (or `maxAgeDays` if longer); items older than `maxAgeDays` are ignored.
 
 ## Usage
 
@@ -51,7 +52,9 @@ See `examples/mushirase.yaml` and `examples/stack.yaml`. Paths are relative to t
 | `rss` | `{path, title?}`: an Atom feed of what was pushed (last 100) |
 | `state` | state file (default `.mushirase/state.json`) |
 
-The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice. A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured.
+The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice; an item it rejects is not recorded and is judged again on the next run. A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured. Feed text goes into the prompt as is, so a crafted post can talk the model into rejecting itself.
+
+Pushed messages name the matching assets and versions. On a public ntfy server, use an access-controlled topic (`tokenEnv`) or an unguessable topic name.
 
 ## Not yet
 

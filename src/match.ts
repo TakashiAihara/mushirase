@@ -1,57 +1,67 @@
 import type { Asset, FeedItem, Kind, Notice } from "./types";
 
+// Different manifests spell the same product differently (.tool-versions says nodejs, Dockerfile says postgres).
+const CANONICAL: Record<string, string> = { nodejs: "node", golang: "go", postgres: "postgresql", "react-dom": "react", drupal: "drupal/core" };
+
+const canonical = (name: string) => CANONICAL[name.toLowerCase()] ?? name.toLowerCase();
+
 // Names that are ambiguous as plain words are replaced by how they are written in notices.
 const ALIASES: Record<string, string[]> = {
   php: ["PHP"],
   node: ["Node.js", "nodejs"],
-  nodejs: ["Node.js", "nodejs"],
   next: ["Next.js"],
   go: ["Golang", "Go toolchain", "Go standard library", "golang.org/x"],
-  golang: ["Golang", "Go toolchain", "Go standard library", "golang.org/x"],
   python: ["Python", "CPython"],
   react: ["React"],
-  "react-dom": ["React"],
   django: ["Django"],
-  drupal: ["Drupal"],
   "drupal/core": ["Drupal"],
   "laravel/framework": ["Laravel"],
   "symfony/symfony": ["Symfony"],
   rails: ["Rails"],
   openssl: ["OpenSSL"],
   nginx: ["nginx"],
-  postgres: ["PostgreSQL"],
   postgresql: ["PostgreSQL"],
   mysql: ["MySQL"],
 };
 
+// "Go" alone is an English verb, so it only names the product when a version follows ("Go 1.23.4").
+const LINE_ONLY: Record<string, string[]> = { go: ["Go"] };
+
+// Aliases that are also common words when lower-cased ("react to").
+const CASE_SENSITIVE = new Set(["React", "Rails"]);
+
 // shortcut: plain names shorter than this are skipped in free text (too many accidental hits), add aliases when one matters.
 const MIN_NAME_LEN = 4;
 
-// A bare "security" also fires on policy posts ("security reporting update"), so it only counts in these pairs.
-const SECURITY = /security (?:release|update|fix|patch|advisor|issue|bulletin)|vulnerab|\bCVE-\d|advisor|exploit|malware|malicious|compromis|backdoor|supply[- ]chain|脆弱性/i;
+// A bare "security" also fires on policy posts ("security reporting update"), so it only counts in these pairs or as a subject tag.
+const SECURITY = /security (?:release|update|fix|patch|issue|bulletin)|\[security\]|^security:|vulnerab|\bCVE-\d|advisor|exploit|malware|malicious|compromis|backdoor|supply[- ]chain|脆弱性/im;
 
-// Runtimes are named in passing by notices about libraries written for them ("S3 Encryption Client for PHP"),
-// so outside their own feed they need a version line that overlaps the asset.
 // A malicious version is new by definition, and a manifest range like ^4.3 can resolve to it.
+// shortcut: decided per item, not per mention, so a supply-chain post citing another version of the same library still hits.
 const SUPPLY_CHAIN = /malicious|malware|compromis|backdoor/i;
 
-const RUNTIMES = new Set(["php", "python", "node", "nodejs", "go", "golang", "ruby", "java", "postgresql", "postgres", "mysql", "nginx", "openssl"]);
+// Runtimes are named in passing by notices about libraries written for them ("S3 Encryption Client for PHP"),
+// so outside their own feed they need a version line, overlapping the asset when the asset has one.
+const RUNTIMES = new Set(["php", "python", "node", "go", "ruby", "java", "postgresql", "mysql", "nginx", "openssl"]);
+
 const PRE = /\bupcoming\b|\bscheduled for\b|\bwill be released\b|pre-?announce|advance notice|予告/i;
-const RELEASE = /\breleased?\b|\bavailable\b/i;
+const RELEASE = /\breleased?\b/i;
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function namesFor(asset: Asset): string[] {
-  const key = asset.name.toLowerCase();
+  const key = canonical(asset.name);
   if (ALIASES[key]) return ALIASES[key];
   return asset.name.length >= MIN_NAME_LEN ? [asset.name] : [];
 }
 
-const VER = String.raw`v?(\d+(?:\.(?:\d+|x))*)`;
+// A dotted version, or a bare number of up to 3 digits so that years ("PHP 2026") and "64-bit" are not versions.
+const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+|\d{1,3})(?![\w-])`;
 
-// Version lines written right after the product name ("PHP 8.3.28 and 8.4.15"), so CVSS scores and dates do not count.
+// Version lines written right after the product name ("PHP 8.3.28 and 8.4.15"), so CVSS scores do not count.
 export function mentionedLines(text: string, name: string): string[] {
-  const re = new RegExp(String.raw`(?<![\w.])${esc(name)}\s+${VER}((?:\s*(?:,|and|or|/|&)\s*${VER})*)`, "gi");
+  const sep = String.raw`\s*(?:,\s*(?:and|or)?|and|or|/|&)\s*`;
+  const re = new RegExp(String.raw`(?<![\w.])${esc(name)}\s+${VER}((?:${sep}${VER})*)`, "gi");
   const out: string[] = [];
   for (const m of text.matchAll(re)) {
     out.push(m[1]);
@@ -60,12 +70,15 @@ export function mentionedLines(text: string, name: string): string[] {
   return out;
 }
 
-function lineHits(line: string, mentioned: string[]): boolean {
-  return mentioned.some((v) => v === line || v.startsWith(line + ".") || line.startsWith(v + ".") || v === `${line}.x`);
+export function lineHits(line: string, mentioned: string[]): boolean {
+  return mentioned.some((raw) => {
+    const v = raw.replace(/\.x$/, "");
+    return v === line || v.startsWith(line + ".") || line.startsWith(v + ".");
+  });
 }
 
 function mentions(text: string, name: string): boolean {
-  const re = new RegExp(String.raw`(?<![\w.])${esc(name)}(?![\w])`, name === name.toLowerCase() ? "i" : "");
+  const re = new RegExp(String.raw`(?<![\w.-])${esc(name)}(?![\w-])`, CASE_SENSITIVE.has(name) ? "" : "i");
   return re.test(text);
 }
 
@@ -76,21 +89,23 @@ function kindOf(item: FeedItem): Kind {
   return "report";
 }
 
-// product: the feed belongs to one product, so every item is about it and only security relevance is checked.
+// product: the feed belongs to one product, so its items need no mention of the name; version lines still apply.
 export function match(item: FeedItem, assets: Asset[], product?: string): Notice | null {
   const text = `${item.title}\n${item.summary}`;
   if (!SECURITY.test(text)) return null;
+  const supplyChain = SUPPLY_CHAIN.test(text);
 
   const hits: Asset[] = [];
   for (const a of assets) {
+    const key = canonical(a.name);
     const names = namesFor(a);
-    const bound = product != null && a.name.toLowerCase() === product.toLowerCase();
-    if (!bound && !names.some((n) => mentions(text, n))) continue;
+    const bound = product != null && key === canonical(product);
+    const lines = [...names, ...(LINE_ONLY[key] ?? [])].flatMap((n) => mentionedLines(text, n));
+    if (!bound && !names.some((n) => mentions(text, n)) && lines.length === 0) continue;
 
-    const lines = names.flatMap((n) => mentionedLines(text, n));
-    if (!bound && RUNTIMES.has(a.name.toLowerCase()) && !(a.version && lineHits(a.version, lines))) continue;
-    const range = SUPPLY_CHAIN.test(text) && !RUNTIMES.has(a.name.toLowerCase());
-    if (a.version && !range && lines.length > 0 && !lineHits(a.version, lines)) continue;
+    const runtime = RUNTIMES.has(key);
+    if (!bound && runtime && (lines.length === 0 || (a.version && !lineHits(a.version, lines)))) continue;
+    if (a.version && !(supplyChain && !runtime) && lines.length > 0 && !lineHits(a.version, lines)) continue;
     hits.push(a);
   }
   if (hits.length === 0) return null;

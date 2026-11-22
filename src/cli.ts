@@ -7,7 +7,7 @@ import { loadInventory, scan } from "./inventory";
 import { judge, type LlmConfig } from "./llm";
 import { match } from "./match";
 import { hitsLine, render, sendNtfy, writeAtom, type NtfyConfig, type Sent } from "./notify";
-import type { Notice } from "./types";
+import type { FeedItem, Notice } from "./types";
 
 type Config = {
   inventory: string[];
@@ -22,6 +22,9 @@ type Config = {
 type State = { seen: Record<string, string>; sent: Sent[] };
 
 const RSS_KEEP = 100;
+
+// Feeds are independent sources, so the same guid in two feeds must not suppress each other.
+const seenKey = (item: FeedItem) => `${item.feed}:${item.id}`;
 
 function loadConfig(path: string): { cfg: Config; base: string } {
   const cfg = Bun.YAML.parse(readFileSync(path, "utf8")) as Config;
@@ -65,7 +68,11 @@ program
     const statePath = at(cfg.state ?? ".mushirase/state.json");
     const state = loadState(statePath);
     const maxAge = Number(opts.maxAge ?? cfg.maxAgeDays ?? 7);
+    if (!Number.isFinite(maxAge) || maxAge <= 0) throw new Error(`max age must be a positive number of days, got ${opts.maxAge ?? cfg.maxAgeDays}`);
     const cutoff = Date.now() - maxAge * 86_400_000;
+    // shortcut: entries are kept for 90 days or maxAge, whichever is longer; a date-less item older than that would be pushed again.
+    const keepSince = Date.now() - Math.max(maxAge, 90) * 86_400_000;
+    if (!opts.dryRun) for (const [k, at] of Object.entries(state.seen)) if (Date.parse(at) < keepSince) delete state.seen[k];
     let failures = 0;
     let checked = 0;
     const notices: Notice[] = [];
@@ -80,7 +87,8 @@ program
         continue;
       }
       for (const item of items) {
-        if (state.seen[item.id]) continue;
+        const key = seenKey(item);
+        if (Object.hasOwn(state.seen, key)) continue;
         const t = item.published ? Date.parse(item.published) : NaN;
         // shortcut: items without a parsable date are treated as new; add a per-feed date override if a feed lacks dates.
         if (!Number.isNaN(t) && t < cutoff) continue;
@@ -88,7 +96,7 @@ program
         const n = match(item, assets, f.product);
         if (!n) {
           if (opts.all) console.log(`  -  ${f.name}: ${item.title}`);
-          if (!opts.dryRun) state.seen[item.id] = new Date().toISOString();
+          if (!opts.dryRun) state.seen[key] = new Date().toISOString();
           continue;
         }
         if (cfg.llm) {
@@ -96,8 +104,8 @@ program
             const v = await judge(cfg.llm, n);
             n.note = v.reason;
             if (!v.relevant) {
+              // Not marked as seen: a wrong verdict is judged again on the next run, or surfaces once the LLM is turned off.
               console.log(`  x  ${f.name}: ${item.title} (LLM: ${v.reason})`);
-              if (!opts.dryRun) state.seen[item.id] = new Date().toISOString();
               continue;
             }
           } catch (e) {
@@ -124,7 +132,7 @@ program
         }
       }
       const now = new Date().toISOString();
-      state.seen[n.item.id] = now;
+      state.seen[seenKey(n.item)] = now;
       state.sent.unshift({ notice: n, at: now });
     }
 

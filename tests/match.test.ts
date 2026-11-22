@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mentionedLines, match } from "../src/match";
+import { lineHits, mentionedLines, match } from "../src/match";
 import type { Asset, FeedItem } from "../src/types";
 
 const item = (title: string, summary = ""): FeedItem => ({ id: title, feed: "t", title, link: "https://example.com", summary });
@@ -102,6 +102,62 @@ describe("mentionedLines", () => {
   });
 
   test("ignores numbers not attached to the name", () => {
-    expect(mentionedLines("rated CVSS v4.0 9.2 on 19 November 2026", "PHP")).toEqual([]);
+    expect(mentionedLines("PHP release rated CVSS v4.0 9.2 on 19 November 2026", "PHP")).toEqual([]);
+  });
+
+  test("reads the last version after an Oxford comma", () => {
+    expect(mentionedLines("PHP 8.4.16, 8.3.30, and 8.2.29 released", "PHP")).toEqual(["8.4.16", "8.3.30", "8.2.29"]);
+  });
+
+  test("does not read years or bitness as versions", () => {
+    expect(mentionedLines("PHP 2026 roadmap and PHP 64-bit builds", "PHP")).toEqual([]);
+  });
+});
+
+describe("lineHits", () => {
+  test("an exact line, a patch under the line, a major covering the line, and a wildcard all overlap", () => {
+    expect(lineHits("8.3", ["8.3"])).toBe(true);
+    expect(lineHits("8.3", ["8.3.30"])).toBe(true);
+    expect(lineHits("8.3", ["8"])).toBe(true);
+    expect(lineHits("8.3", ["8.x"])).toBe(true);
+  });
+
+  test("a sibling line does not overlap", () => {
+    expect(lineHits("8.3", ["8.30.1", "8.4", "9.x"])).toBe(false);
+  });
+});
+
+describe("names", () => {
+  test("Go is recognised when a version follows it", () => {
+    const n = match(item("Go 1.23.5 fixes CVE-2026-3"), [a("go", "1.23")]);
+    expect(n?.hits.map((h) => h.name)).toEqual(["go"]);
+  });
+
+  test("a project feed binds assets spelled differently by another manifest", () => {
+    const n = match(item("Upcoming Node.js security release"), [a("nodejs", "22")], "node");
+    expect(n?.hits.map((h) => h.name)).toEqual(["nodejs"]);
+  });
+
+  test("a hyphenated longer name is a different product", () => {
+    expect(match(item("Security advisory for React-Native"), [a("react", "19")])).toBeNull();
+  });
+
+  test("an unambiguous alias matches when written in lower case", () => {
+    expect(match(item("openssl 3.0.16 fixes CVE-2026-4"), [a("openssl", "3.0")])).not.toBeNull();
+  });
+
+  test("a runtime without a version matches when the notice names a version", () => {
+    expect(match(item("PHP 8.3.30 fixes CVE-2026-5"), [a("php")])).not.toBeNull();
+    expect(match(item("Amazon S3 Encryption Client for PHP: CVE-2026-6"), [a("php")])).toBeNull();
+  });
+});
+
+describe("wording", () => {
+  test("a [SECURITY] subject tag counts as security wording", () => {
+    expect(match(item("[SECURITY] Django 5.1.9 released"), [a("django", "5.1")], "django")).not.toBeNull();
+  });
+
+  test("an item that is neither a pre-announcement nor a release is a report", () => {
+    expect(match(item("Exploit seen for Drupal core"), [a("drupal/core", "10")], "drupal/core")?.kind).toBe("report");
   });
 });

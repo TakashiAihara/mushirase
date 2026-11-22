@@ -1,19 +1,32 @@
 import { XMLParser } from "fast-xml-parser";
 import type { FeedItem } from "./types";
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@" });
+// Atom bodies are taken raw: the parser reorders mixed xhtml content ("a <b>b</b> c" becomes "b a c").
+const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", stopNodes: ["feed.entry.content", "feed.entry.summary"] });
+
+function decode(s: string): string {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
+}
 
 const arr = <T>(v: T | T[] | undefined): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
+// Atom type="xhtml" content arrives as nested elements, so every text node is collected.
 function text(v: unknown): string {
   if (v == null) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
-  if (typeof v === "object" && "#text" in (v as object)) return String((v as Record<string, unknown>)["#text"]);
+  if (Array.isArray(v)) return v.map(text).join(" ");
+  if (typeof v === "object") {
+    return Object.entries(v as Record<string, unknown>)
+      .filter(([k]) => !k.startsWith("@"))
+      .map(([, c]) => text(c))
+      .join(" ");
+  }
   return "";
 }
 
+// The parser has already decoded entities, so only real tags are removed; "< 8.3.30" in a summary stays.
 function stripHtml(s: string): string {
-  return s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  return s.replace(/<\/?[a-zA-Z][^<>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function atomLink(v: unknown): string {
@@ -32,7 +45,7 @@ export function parseFeed(xml: string, feed: string): FeedItem[] {
         feed,
         title: stripHtml(text(e.title)),
         link,
-        summary: stripHtml(text(e.content) || text(e.summary)).slice(0, 4000),
+        summary: stripHtml(decode(stripHtml(text(e.content) || text(e.summary)))).slice(0, 4000),
         published: text(e.published) || text(e.updated) || undefined,
       };
     });
@@ -46,7 +59,7 @@ export function parseFeed(xml: string, feed: string): FeedItem[] {
       feed,
       title: stripHtml(text(e.title)),
       link,
-      summary: stripHtml(text(e["content:encoded"]) || text(e.description)).slice(0, 4000),
+      summary: stripHtml(decode(stripHtml(text(e["content:encoded"]) || text(e.description)))).slice(0, 4000),
       published: text(e.pubDate) || text(e["dc:date"]) || undefined,
     };
   });
