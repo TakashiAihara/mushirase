@@ -66,7 +66,7 @@ Fill in the token and the ntfy URL, edit `stack.yaml`, check with a dry run, the
 systemctl daemon-reload && systemctl enable --now mushirase.timer
 ```
 
-The first run pushes what matched in the last `maxAgeDays`. Failures show in `systemctl --failed` and `journalctl -u mushirase`. To stop: `systemctl disable --now mushirase.timer`.
+The first run pushes what matched in the last `maxAgeDays`. With `llm` enabled each judgement can take up to 2 minutes, so raise `TimeoutStartSec` accordingly. Failures show in `systemctl --failed` and `journalctl -u mushirase`. To stop: `systemctl disable --now mushirase.timer`.
 
 ## Configuration
 

@@ -134,8 +134,10 @@ program
       const now = new Date().toISOString();
       state.seen[seenKey(n.item)] = now;
       state.sent.unshift({ notice: n, at: now });
-      // Saved after every push: a run stopped midway (a scheduler timeout) must not push the same item again.
+      // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
+      // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
+      if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
     }
 
     console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
