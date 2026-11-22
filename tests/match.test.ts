@@ -322,3 +322,8 @@ describe("security-only feeds and wording", () => {
     expect(match(item("Next.js flaw re-exploited in the wild"), [a("next", "15")], "next")?.why).toBe("題名「re-exploited」");
   });
 });
+
+test("a versioned update or patch title with security wording in the body is kept", () => {
+  expect(match(item("PHP 8.3.30 update", "It fixes a critical vulnerability."), [a("php", "8.3")], "php")).not.toBeNull();
+  expect(match(item("Drupal core 10.3.5 patch", "It fixes a critical vulnerability."), [a("drupal/core", "10")], "drupal/core")).not.toBeNull();
+});

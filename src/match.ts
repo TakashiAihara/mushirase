@@ -63,7 +63,7 @@ const RELEASE_WORD = /\breleas\w*|\bupdates?\b|\bpatch\w*/i;
 // ("Upcoming changes to the support policy" does not).
 const releaseTitle = (title: string) => RELEASE_WORD.test(title) && (PRE.test(title) || ON_DAY.test(title) || VERSION_RELEASE.test(title));
 
-const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\breleas(?:e|ed|es)\b|\breleas(?:e|ed|es)\b.*\b\d+\.\d+/i;
+const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\b(?:releas(?:e|ed|es)|updates?|patch(?:es|ed)?)\b|\b(?:releas(?:e|ed|es)|updates?|patch(?:es|ed)?)\b.*\b\d+\.\d+/i;
 
 // A post is about a vulnerability when its title says so, or when its title announces a release (upcoming, or a version)
 // and its body says that release is a security one. Blog posts that only mention security in the body ("more secure") do not pass.
