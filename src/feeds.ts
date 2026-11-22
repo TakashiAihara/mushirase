@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import type { FeedItem } from "./types";
 
 // Atom bodies are taken raw: the parser reorders mixed xhtml content ("a <b>b</b> c" becomes "b a c").
+// RSS bodies are text (escaped or CDATA), so the parser's own decoding is kept and body() undoes the HTML layer.
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", stopNodes: ["feed.entry.content", "feed.entry.summary"] });
 
 function decode(s: string): string {
@@ -10,7 +11,7 @@ function decode(s: string): string {
 
 const arr = <T>(v: T | T[] | undefined): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
-// Atom type="xhtml" content arrives as nested elements, so every text node is collected.
+// Titles and ids can still arrive as nested elements; their text nodes are joined.
 function text(v: unknown): string {
   if (v == null) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
@@ -24,9 +25,15 @@ function text(v: unknown): string {
   return "";
 }
 
-// The parser has already decoded entities, so only real tags are removed; "< 8.3.30" in a summary stays.
+// Only real tags, comments, doctypes and processing instructions are removed, so "< 8.3.30" stays.
 function stripHtml(s: string): string {
-  return s.replace(/<\/?[a-zA-Z][^<>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  return s.replace(/<\/?[a-zA-Z][^<>]*>|<[!?][^<>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// A raw body has two layers: XML (xhtml markup, then its entities) and the HTML that escaped markup becomes (type="html", RSS).
+function body(raw: unknown): string {
+  const s = text(raw).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+  return decode(stripHtml(decode(stripHtml(s)))).replace(/\s+/g, " ").trim().slice(0, 4000);
 }
 
 function atomLink(v: unknown): string {
@@ -45,7 +52,7 @@ export function parseFeed(xml: string, feed: string): FeedItem[] {
         feed,
         title: stripHtml(text(e.title)),
         link,
-        summary: stripHtml(decode(stripHtml(text(e.content) || text(e.summary)))).slice(0, 4000),
+        summary: body(e.content) || body(e.summary),
         published: text(e.published) || text(e.updated) || undefined,
       };
     });
@@ -59,7 +66,7 @@ export function parseFeed(xml: string, feed: string): FeedItem[] {
       feed,
       title: stripHtml(text(e.title)),
       link,
-      summary: stripHtml(decode(stripHtml(text(e["content:encoded"]) || text(e.description)))).slice(0, 4000),
+      summary: body(e["content:encoded"]) || body(e.description),
       published: text(e.pubDate) || text(e["dc:date"]) || undefined,
     };
   });

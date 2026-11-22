@@ -18,18 +18,18 @@ function repo(name: string, files: Record<string, string>): string {
 
 const spec = (dir: string) => Object.fromEntries(scan(dir).map((a) => [a.name, a.version ?? null]));
 
-test("a caret or lower-bound range keeps only the major, an exact or tilde spec keeps the minor", () => {
-  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", tiny: "^0.4.1" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
-  expect(spec(dir)).toEqual({ next: "15", zod: "3.22", tiny: "0.4", left: "2.1", node: "22" });
+test("ranges keep their operator, npm tilde and exact pins keep the line, upper bounds are dropped", () => {
+  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", tiny: "^0.4.1", old: "<2" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
+  expect(spec(dir)).toEqual({ next: "^15.0", zod: "3.22", tiny: "^0.4", old: null, left: "2.1", node: ">=22.0" });
 });
 
 test("go.mod keeps direct requires and the go line, not indirect, replace or exclude", () => {
-  const gomod = ["module example.com/m", "", "go 1.23.4", "", "require (", "\tgithub.com/a/direct v1.4.0", "\tgithub.com/b/indirect v2.0.1 // indirect", ")", "", "replace github.com/c/r v1.0.0 => ../r", "exclude (", "\tgithub.com/d/x v0.9.0", ")", ""].join("\n");
+  const gomod = ["module example.com/m", "", "go 1.23.4", "", "require (", "\tgithub.com/a/direct v1.4.0", "\tgithub.com/b/indirect v2.0.1 // indirect", ")", "", "replace github.com/c/r v1.0.0 => ../r", "replace (", "\tgithub.com/e/y v1.1.0 => github.com/f/z v1.2.0", ")", "exclude (", "\tgithub.com/d/x v0.9.0", ")", ""].join("\n");
   expect(spec(repo("go", { "go.mod": gomod }))).toEqual({ go: "1.23", "github.com/a/direct": "1.4" });
 });
 
 test("requirements with extras keep their version", () => {
-  expect(spec(repo("py", { "requirements.txt": "django[argon2]>=5.1\n# note\nrequests==2.32.3\n-e ./local\n" }))).toEqual({ django: "5.1", requests: "2.32" });
+  expect(spec(repo("py", { "requirements.txt": "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\n-e ./local\n" }))).toEqual({ django: ">=5.1", requests: "2.32", urllib3: "^2.2" });
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {

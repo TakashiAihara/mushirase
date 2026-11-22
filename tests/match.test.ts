@@ -109,12 +109,29 @@ describe("mentionedLines", () => {
     expect(mentionedLines("PHP 8.4.16, 8.3.30, and 8.2.29 released", "PHP")).toEqual(["8.4.16", "8.3.30", "8.2.29"]);
   });
 
-  test("does not read years or bitness as versions", () => {
-    expect(mentionedLines("PHP 2026 roadmap and PHP 64-bit builds", "PHP")).toEqual([]);
+  test("does not read years, bitness, counts, dates or suffixed builds as versions", () => {
+    expect(mentionedLines("PHP 2026 roadmap, PHP 64-bit builds, PHP 19 November, PHP 8.4-rc1, PHP 8.3.30-1ubuntu1", "PHP")).toEqual([]);
+  });
+
+  test("reads a version at the end of a sentence", () => {
+    expect(mentionedLines("Upgrade to PHP 8.3.30.", "PHP")).toEqual(["8.3.30"]);
   });
 });
 
 describe("lineHits", () => {
+  test("a caret range covers later minors of the same major only", () => {
+    expect(lineHits("^8.3", ["8.4.1"])).toBe(true);
+    expect(lineHits("^8.3", ["8.3.30"])).toBe(true);
+    expect(lineHits("^8.3", ["8.2.29"])).toBe(false);
+    expect(lineHits("^8.3", ["9.0.0"])).toBe(false);
+    expect(lineHits("^0.4", ["0.5.0"])).toBe(false);
+  });
+
+  test("a lower bound covers every later version", () => {
+    expect(lineHits(">=22.0", ["23.1.0"])).toBe(true);
+    expect(lineHits(">=22.0", ["20.18.1"])).toBe(false);
+  });
+
   test("an exact line, a patch under the line, a major covering the line, and a wildcard all overlap", () => {
     expect(lineHits("8.3", ["8.3"])).toBe(true);
     expect(lineHits("8.3", ["8.3.30"])).toBe(true);
@@ -128,9 +145,28 @@ describe("lineHits", () => {
 });
 
 describe("names", () => {
-  test("Go is recognised when a version follows it", () => {
+  test("Go is recognised when a version follows it, and only capitalised", () => {
     const n = match(item("Go 1.23.5 fixes CVE-2026-3"), [a("go", "1.23")]);
     expect(n?.hits.map((h) => h.name)).toEqual(["go"]);
+    expect(match(item("CVE-2026-3: attackers can go 1.23 steps further"), [a("go", "1.23")])).toBeNull();
+  });
+
+  test("a name prefixed by a hyphen is not the product even with a version", () => {
+    expect(match(item("non-PHP 8.3.30 parser fixes CVE-2026-7"), [a("php", "8.3")])).toBeNull();
+  });
+
+  test("a capitalised name written by the user keeps its case", () => {
+    expect(match(item("Security fix: express delivery"), [a("Express")])).toBeNull();
+    expect(match(item("Security advisory for Express"), [a("Express")])).not.toBeNull();
+  });
+
+  test("React matches when capitalised", () => {
+    expect(match(item("React 19.1.2 fixes CVE-2026-8"), [a("react", "19")])?.hits.map((h) => h.name)).toEqual(["react"]);
+  });
+
+  test("a composer caret range on PHP reaches a later minor's release and not an earlier one", () => {
+    expect(match(item("PHP 8.4.16 Released", "This is a security release."), [a("php", "^8.3")], "php")).not.toBeNull();
+    expect(match(item("PHP 8.2.30 Released", "This is a security release."), [a("php", "^8.3")], "php")).toBeNull();
   });
 
   test("a project feed binds assets spelled differently by another manifest", () => {
@@ -143,7 +179,7 @@ describe("names", () => {
   });
 
   test("an unambiguous alias matches when written in lower case", () => {
-    expect(match(item("openssl 3.0.16 fixes CVE-2026-4"), [a("openssl", "3.0")])).not.toBeNull();
+    expect(match(item("Security advisory for django users"), [a("django", "5.1")])).not.toBeNull();
   });
 
   test("a runtime without a version matches when the notice names a version", () => {

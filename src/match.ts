@@ -10,7 +10,7 @@ const ALIASES: Record<string, string[]> = {
   php: ["PHP"],
   node: ["Node.js", "nodejs"],
   next: ["Next.js"],
-  go: ["Golang", "Go toolchain", "Go standard library", "golang.org/x"],
+  go: ["Golang"],
   python: ["Python", "CPython"],
   react: ["React"],
   django: ["Django"],
@@ -27,7 +27,7 @@ const ALIASES: Record<string, string[]> = {
 // "Go" alone is an English verb, so it only names the product when a version follows ("Go 1.23.4").
 const LINE_ONLY: Record<string, string[]> = { go: ["Go"] };
 
-// Aliases that are also common words when lower-cased ("react to").
+// Aliases that are also common words when lower-cased ("react to"). LINE_ONLY names are always case-sensitive.
 const CASE_SENSITIVE = new Set(["React", "Rails"]);
 
 // shortcut: plain names shorter than this are skipped in free text (too many accidental hits), add aliases when one matters.
@@ -49,19 +49,25 @@ const RELEASE = /\breleased?\b/i;
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function namesFor(asset: Asset): string[] {
+type Name = { text: string; caseSensitive: boolean };
+
+// Aliases are spelled by us and are case-insensitive unless listed; a capitalised name the user wrote ("Express") keeps its case.
+function namesFor(asset: Asset): Name[] {
   const key = canonical(asset.name);
-  if (ALIASES[key]) return ALIASES[key];
-  return asset.name.length >= MIN_NAME_LEN ? [asset.name] : [];
+  if (ALIASES[key]) return ALIASES[key].map((t) => ({ text: t, caseSensitive: CASE_SENSITIVE.has(t) }));
+  return asset.name.length >= MIN_NAME_LEN ? [{ text: asset.name, caseSensitive: asset.name !== asset.name.toLowerCase() }] : [];
 }
 
-// A dotted version, or a bare number of up to 3 digits so that years ("PHP 2026") and "64-bit" are not versions.
-const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+|\d{1,3})(?![\w-])`;
+const BEFORE = String.raw`(?<![\w.-])`;
+
+// Dotted versions only, so years, counts and dates after a name ("PHP 2026", "OpenSSL 3 months", "PHP 19 November") are not versions,
+// and a suffixed one ("PHP 8.4-rc1") is not read as a shorter line.
+const VER = String.raw`v?(\d+(?:\.(?:\d+|x))+)(?![\w-]|\.\w)`;
 
 // Version lines written right after the product name ("PHP 8.3.28 and 8.4.15"), so CVSS scores do not count.
-export function mentionedLines(text: string, name: string): string[] {
+export function mentionedLines(text: string, name: string, caseSensitive = false): string[] {
   const sep = String.raw`\s*(?:,\s*(?:and|or)?|and|or|/|&)\s*`;
-  const re = new RegExp(String.raw`(?<![\w.])${esc(name)}\s+${VER}((?:${sep}${VER})*)`, "gi");
+  const re = new RegExp(String.raw`${BEFORE}${esc(name)}\s+${VER}((?:${sep}${VER})*)`, caseSensitive ? "g" : "gi");
   const out: string[] = [];
   for (const m of text.matchAll(re)) {
     out.push(m[1]);
@@ -70,16 +76,28 @@ export function mentionedLines(text: string, name: string): string[] {
   return out;
 }
 
-export function lineHits(line: string, mentioned: string[]): boolean {
+const nums = (s: string) => s.split(".").map(Number);
+
+// Compares over the shorter of the two, so "8" against "8.3" is equal (one covers the other).
+function cmp(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return 0;
+}
+
+// spec is a line ("8.3"), a caret range ("^15.0": same major, this minor or later) or a lower bound (">=22").
+export function lineHits(spec: string, mentioned: string[]): boolean {
+  const m = spec.match(/^(\^|>=?)?(.*)$/)!;
+  const base = nums(m[2]);
   return mentioned.some((raw) => {
-    const v = raw.replace(/\.x$/, "");
-    return v === line || v.startsWith(line + ".") || line.startsWith(v + ".");
+    const v = nums(raw.replace(/\.x$/, ""));
+    if (m[1] === "^" && base[0] !== 0) return v[0] === base[0] && cmp(v, base) >= 0;
+    if (m[1]?.startsWith(">")) return cmp(v, base) >= 0;
+    return cmp(v, base) === 0;
   });
 }
 
-function mentions(text: string, name: string): boolean {
-  const re = new RegExp(String.raw`(?<![\w.-])${esc(name)}(?![\w-])`, CASE_SENSITIVE.has(name) ? "" : "i");
-  return re.test(text);
+function mentions(text: string, n: Name): boolean {
+  return new RegExp(String.raw`${BEFORE}${esc(n.text)}(?![\w-])`, n.caseSensitive ? "" : "i").test(text);
 }
 
 function kindOf(item: FeedItem): Kind {
@@ -100,7 +118,8 @@ export function match(item: FeedItem, assets: Asset[], product?: string): Notice
     const key = canonical(a.name);
     const names = namesFor(a);
     const bound = product != null && key === canonical(product);
-    const lines = [...names, ...(LINE_ONLY[key] ?? [])].flatMap((n) => mentionedLines(text, n));
+    const lineNames = [...names, ...(LINE_ONLY[key] ?? []).map((t) => ({ text: t, caseSensitive: true }))];
+    const lines = lineNames.flatMap((n) => mentionedLines(text, n.text, n.caseSensitive));
     if (!bound && !names.some((n) => mentions(text, n)) && lines.length === 0) continue;
 
     const runtime = RUNTIMES.has(key);

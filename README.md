@@ -2,7 +2,7 @@
 
 Push only the security notices that hit your stack: pre-announcements and early reports matched against your own inventory.
 
-Dependabot and friends match published advisories (GHSA / OSV). They cannot see what comes before or outside them: "a critical PHP security release is scheduled for tomorrow", a Next.js security release program post, a supply-chain compromise written up on a blog hours before the advisory, or a runtime / managed service your manifests do not declare. mushirase reads those feeds, keeps only the items that name something you run, and pushes them. A notification means "must read".
+Dependabot and friends match published advisories (GHSA / OSV). They cannot see what comes before or outside them: "a critical PHP security release is scheduled for tomorrow", a Next.js security release program post, a supply-chain compromise written up on a blog hours before the advisory, or a runtime / managed service your manifests do not declare. mushirase reads those feeds, keeps only the items about something you run, and pushes them. A notification means "must read".
 
 Status: prototype.
 
@@ -12,17 +12,20 @@ Status: prototype.
 flowchart LR
   F[RSS / Atom feeds] --> M{security wording?}
   M -- no --> D[drop]
-  M -- yes --> A{names one of your assets<br/>with an overlapping version line?}
+  M -- yes --> A{about one of your assets?<br/>project feed, or named in the text}
   A -- no --> D
-  A -- yes --> L{optional LLM second opinion}
-  L --> N[ntfy push + Atom feed]
+  A -- yes --> V{version lines stated<br/>and none overlap yours?}
+  V -- yes --> D
+  V -- no --> L{optional LLM<br/>second opinion}
+  L -- rejects --> D
+  L -- keeps or off --> N[ntfy push + Atom feed]
 ```
 
 - Inventory: hand-written YAML for what no manifest declares, plus repository checkouts scanned for `package.json`, `composer.json`, `go.mod`, `requirements.txt`, `pyproject.toml`, `Dockerfile*`, `.mise.toml`, `.tool-versions` (direct dependencies only). Quote versions in YAML (`"8.10"`); an unquoted number is rejected because `8.10` would be read as `8.1`.
-- A caret or lower-bound range (`^15.0.0`, `>=22`) becomes the major line `15`; an exact or tilde spec keeps the minor (`~3.22.1` → `3.22`).
-- Project feeds (`product:` set) are about one product, so their items need not name it; version lines still apply. Spellings from different manifests are unified (`nodejs` = `node`, `golang` = `go`, `postgres` = `postgresql`).
-- General feeds need the item to name an asset. Ambiguous names are matched by how notices write them (`next` → `Next.js`, `go` → `Golang`, or `Go` followed by a version); plain names shorter than 4 characters are skipped.
-- Version lines are read only when written right after the name (`PHP 8.4.16 and 8.3.30`), so CVSS scores and dates do not count. An item naming other lines is dropped.
+- Ranges keep their operator: `^15.0.0` → `^15.0` (same major, 15.0 or later), Python's `~=2.2` → `^2.2`, `>=22` → `>=22` (any later version). npm's `~3.22.1` and exact pins keep the line `3.22`. Upper bounds (`<2`) are dropped. Compound ranges keep the first bound only.
+- Project feeds (`product:` set) are about one product, so their items need not name it; version lines still apply. Spellings from different manifests are unified (`nodejs` = `node`, `golang` = `go`, `postgres` = `postgresql`, `react-dom` = `react`, `drupal` = `drupal/core`).
+- General feeds need the item to name an asset. Ambiguous names are matched by how notices write them (`next` → `Next.js`, `go` → `Golang`, or `Go` followed by a version); plain names shorter than 4 characters are skipped. Aliases are case-insensitive except `React` and `Rails`; a capitalised name you write yourself (`Express`) keeps its case.
+- Version lines are read only when written right after the name (`PHP 8.4.16, 8.3.30, and 8.2.29`) and only in dotted form, so CVSS scores, years, dates and counts do not count. An item naming only other lines is dropped.
 - Runtimes (PHP, Python, Node.js, PostgreSQL, ...) outside their own feed need a version line (overlapping the asset's, when it has one), because library notices name them in passing ("S3 Encryption Client for PHP").
 - Supply-chain items (malicious / compromised) skip the line check for libraries: a manifest range like `^4.3` can resolve to the new malicious version.
 - Items already seen are remembered per feed in a state file for 90 days (or `maxAgeDays` if longer); items older than `maxAgeDays` are ignored.
@@ -52,7 +55,7 @@ See `examples/mushirase.yaml` and `examples/stack.yaml`. Paths are relative to t
 | `rss` | `{path, title?}`: an Atom feed of what was pushed (last 100) |
 | `state` | state file (default `.mushirase/state.json`) |
 
-The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice; an item it rejects is not recorded and is judged again on the next run. A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured. Feed text goes into the prompt as is, so a crafted post can talk the model into rejecting itself.
+The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice; an item it rejects is not recorded and is judged again on every run while it stays in the window (for items without a date, as long as the feed lists them). A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured. Feed text goes into the prompt as is, so a crafted post can talk the model into rejecting itself.
 
 Pushed messages name the matching assets and versions. On a public ntfy server, use an access-controlled topic (`tokenEnv`) or an unguessable topic name.
 

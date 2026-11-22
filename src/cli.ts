@@ -24,7 +24,7 @@ type State = { seen: Record<string, string>; sent: Sent[] };
 const RSS_KEEP = 100;
 
 // Feeds are independent sources, so the same guid in two feeds must not suppress each other.
-const seenKey = (item: FeedItem) => `${item.feed}:${item.id}`;
+const seenKey = (item: FeedItem) => `${item.feed}\n${item.id}`;
 
 function loadConfig(path: string): { cfg: Config; base: string } {
   const cfg = Bun.YAML.parse(readFileSync(path, "utf8")) as Config;
@@ -72,7 +72,7 @@ program
     const cutoff = Date.now() - maxAge * 86_400_000;
     // shortcut: entries are kept for 90 days or maxAge, whichever is longer; a date-less item older than that would be pushed again.
     const keepSince = Date.now() - Math.max(maxAge, 90) * 86_400_000;
-    if (!opts.dryRun) for (const [k, at] of Object.entries(state.seen)) if (Date.parse(at) < keepSince) delete state.seen[k];
+    if (!opts.dryRun) for (const [k, when] of Object.entries(state.seen)) if (Date.parse(when) < keepSince) delete state.seen[k];
     let failures = 0;
     let checked = 0;
     const notices: Notice[] = [];

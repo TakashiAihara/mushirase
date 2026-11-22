@@ -8,12 +8,17 @@ function lineOf(spec: string): string | undefined {
   return spec.match(/\d+(?:\.\d+)?/)?.[0];
 }
 
-// A caret or lower-bound range (^15.0.0, >=22) admits every later minor, so only the major is a line.
+// Ranges keep their operator so matching can treat them as ranges: ^ and Python's ~= (compatible release) as "^",
+// a lower bound as ">="; npm's ~ and exact pins keep only the line.
+// shortcut: compound ranges ("^1 || ^2", "1.2 - 2.0") keep the first bound only.
 function lineOfRange(spec: string): string | undefined {
   const line = lineOf(spec);
-  if (!line || !/^\s*(\^|>=?)/.test(spec)) return line;
-  const major = line.split(".")[0];
-  return major === "0" ? line : major;
+  // An upper bound or an exclusion ("<2", "!=1.4") says nothing about what is installed.
+  if (!line || /^\s*[<!]/.test(spec)) return undefined;
+  const op = spec.trim().match(/^(\^|~=|>=?)/)?.[1];
+  if (op === "^" || op === "~=") return `^${line}`;
+  if (op) return `>=${line}`;
+  return line;
 }
 
 function fromPackageJson(text: string, src: string): Asset[] {
@@ -56,8 +61,8 @@ function fromRequirements(text: string, src: string): Asset[] {
     .map((l) => l.replace(/#.*/, "").trim())
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
-      const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*(?:[=<>~!]=?\s*([\d.]+))?/);
-      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? lineOf(m[2]) : undefined, source: src };
+      const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!]=?\s*[\d.]+)?/);
+      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? lineOfRange(m[2]) : undefined, source: src };
     });
 }
 
@@ -65,7 +70,7 @@ function fromPyproject(text: string, src: string): Asset[] {
   const t = Bun.TOML.parse(text) as { project?: { dependencies?: string[]; "requires-python"?: string } };
   const out = fromRequirements((t.project?.dependencies ?? []).join("\n"), src);
   const py = t.project?.["requires-python"];
-  if (py) out.push({ name: "python", version: lineOf(py), source: src });
+  if (py) out.push({ name: "python", version: lineOfRange(py), source: src });
   return out;
 }
 
