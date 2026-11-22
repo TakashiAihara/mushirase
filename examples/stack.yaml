@@ -1,0 +1,18 @@
+# A multi-product stack (TypeScript / PHP / Python / Go on AWS) written by hand.
+# Use this form for what no manifest declares: managed runtimes, OS packages, middleware.
+assets:
+  - { name: php, version: "8.3" }
+  - { name: laravel/framework, version: "11" }
+  - { name: drupal/core, version: "10" }
+  - { name: node, version: "22" }
+  - { name: next, version: "15" }
+  - { name: react, version: "19" }
+  - { name: python, version: "3.12" }
+  - { name: django, version: "5.1" }
+  - { name: go, version: "1.23" }
+  - { name: nginx, version: "1.27" }
+  - { name: openssl, version: "3.0" }
+  - { name: mysql, version: "8.0" }
+  - { name: postgresql, version: "16" }
+  - { name: AWS Lambda }
+  - { name: Amazon RDS }
