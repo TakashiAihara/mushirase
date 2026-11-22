@@ -5,9 +5,10 @@ import type { Asset } from "./types";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor", "dist", "build", ".venv"]);
 
-// A tag or tool version as a line ("8.3" = 8.3.x); calendar or zero-padded numbers ("2024.01", "08.3") are not semver and are dropped.
+// A tag or tool version as a line ("8.3" = 8.3.x), read only from its start: in "fpm-alpine3.20" the number is alpine's, not php's.
+// Zero-padded numbers ("24.04", "08.3") are not semver and are dropped.
 function lineOf(spec: string): string | undefined {
-  const line = spec.match(/\d+(?:\.\d+)?/)?.[0];
+  const line = spec.match(/^v?(\d+(?:\.\d+)?)/)?.[1];
   return line && semver.validRange(line) ? line : undefined;
 }
 
@@ -26,7 +27,7 @@ function toRange(spec: string, eco: Eco): string | undefined {
 function fromPackageJson(text: string, src: string): Asset[] {
   const j = JSON.parse(text);
   const out: Asset[] = [];
-  for (const key of ["dependencies", "devDependencies"]) {
+  for (const key of ["dependencies", "devDependencies", "optionalDependencies"]) {
     for (const [name, spec] of Object.entries<string>(j[key] ?? {})) {
       out.push({ name, version: toRange(String(spec), "npm"), source: src });
     }
@@ -66,7 +67,9 @@ function fromRequirements(text: string, src: string): Asset[] {
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
       const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!][^;#]*)?/);
-      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? toRange(m[2], "python") : undefined, source: src };
+      // PEP 503: names compare case-insensitively with runs of "-", "_" and "." equal.
+      const name = (m?.[1] ?? l).toLowerCase().replace(/[-_.]+/g, "-");
+      return { name, version: m?.[2] ? toRange(m[2], "python") : undefined, source: src };
     });
 }
 

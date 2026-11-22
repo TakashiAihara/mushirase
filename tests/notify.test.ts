@@ -26,3 +26,9 @@ test("Atom entry ids keep feed and item apart and escape the link", () => {
   expect(xml).toContain("<id>urn:mushirase:my%20feed</id>");
   expect(xml).toContain('<link href="https://example.com/a?b=1&amp;c=2"/>');
 });
+
+test("control characters that XML 1.0 forbids are dropped from the Atom feed", () => {
+  const n = notice("php", "1");
+  n.item.title = "bad\u0001title\u000b end";
+  expect(atom("t", [{ notice: n, at: "2026-11-22T00:00:00.000Z" }])).toContain("<title>[予告] badtitle end</title>");
+});

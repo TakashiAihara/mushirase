@@ -36,7 +36,8 @@ export async function sendNtfy(cfg: NtfyConfig, n: Notice): Promise<void> {
   if (!res.ok) throw new Error(`ntfy HTTP ${res.status}`);
 }
 
-const x = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Control characters other than tab and newlines are not allowed in XML 1.0, so they are dropped.
+const x = (s: string) => s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export type Sent = { notice: Notice; at: string };
 

@@ -19,8 +19,8 @@ function repo(name: string, files: Record<string, string>): string {
 const spec = (dir: string) => Object.fromEntries(scan(dir).map((a) => [a.name, a.version ?? null]));
 
 test("npm specs are kept as semver ranges, invalid ones dropped", () => {
-  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: "workspace:*" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
-  expect(spec(dir)).toEqual({ next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: null, left: "2.1.3", node: ">=22.0.0" });
+  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: "workspace:*" }, devDependencies: { left: "2.1.3" }, optionalDependencies: { fsevents: "^2.3.3" }, engines: { node: ">=22.0.0" } }) });
+  expect(spec(dir)).toEqual({ next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: null, left: "2.1.3", fsevents: "^2.3.3", node: ">=22.0.0" });
 });
 
 test("Composer keeps exact pins only; ranges leave the package without a version", () => {
@@ -34,8 +34,8 @@ test("go.mod keeps direct requires and the go line, not indirect, replace or exc
 });
 
 test("Python keeps exact pins only, reads extras, hashes and continued lines", () => {
-  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\npinned==1.4 --hash=sha256:def\nhashed==2.0.1 \\\n    --hash=sha256:abc\ncontinued>=2.0, \\\n    <3.0\n-e ./local\n";
-  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: null, requests: "2.32.3", urllib3: null, pinned: "1.4", hashed: "2.0.1", continued: null });
+  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\npinned==1.4 --hash=sha256:def\nhashed==2.0.1 \\\n    --hash=sha256:abc\ncontinued>=2.0, \\\n    <3.0\nPython_Multipart==0.0.12\nzope.interface==7.1.1\n-e ./local\n";
+  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: null, requests: "2.32.3", urllib3: null, pinned: "1.4", hashed: "2.0.1", continued: null, "python-multipart": "0.0.12", "zope-interface": "7.1.1" });
 });
 
 test("requires-python ranges leave python without a version", () => {
@@ -43,8 +43,8 @@ test("requires-python ranges leave python without a version", () => {
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {
-  const d = "FROM localhost:5000/team/php:8.3-fpm AS base\n  FROM node:22-alpine\nFROM scratch\nFROM golang@sha256:abc\nFROM localhost:5000/team/app\nFROM base AS final\nFROM ubuntu:2024.01\n";
-  expect(spec(repo("docker", { Dockerfile: d }))).toEqual({ php: "8.3", node: "22", golang: null, app: null, ubuntu: null });
+  const d = "FROM localhost:5000/team/php:8.3-fpm AS base\n  FROM node:22-alpine\nFROM scratch\nFROM golang@sha256:abc\nFROM localhost:5000/team/app\nFROM base AS final\nFROM ubuntu:2024.01\nFROM nginx:mainline-alpine3.20\n";
+  expect(spec(repo("docker", { Dockerfile: d }))).toEqual({ php: "8.3", node: "22", golang: null, app: null, ubuntu: null, nginx: null });
 });
 
 test("mise tools written as tables or lists keep every version", () => {
