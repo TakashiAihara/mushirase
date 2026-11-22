@@ -327,3 +327,7 @@ test("a versioned update or patch title with security wording in the body is kep
   expect(match(item("PHP 8.3.30 update", "It fixes a critical vulnerability."), [a("php", "8.3")], "php")).not.toBeNull();
   expect(match(item("Drupal core 10.3.5 patch", "It fixes a critical vulnerability."), [a("drupal/core", "10")], "drupal/core")).not.toBeNull();
 });
+
+test("a support policy post with a version and patch in its title is not a release", () => {
+  expect(match(item("Drupal 10.3 patch support policy update", "Security fixes for vulnerabilities will take longer."), [a("drupal/core", "10")], "drupal/core")).toBeNull();
+});
