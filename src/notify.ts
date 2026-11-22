@@ -56,7 +56,15 @@ export type UploadConfig = { url: string; userEnv?: string; passwordEnv?: string
 export async function uploadAtom(cfg: UploadConfig, body: string): Promise<void> {
   const user = cfg.userEnv ? process.env[cfg.userEnv] : undefined;
   const pass = cfg.passwordEnv ? process.env[cfg.passwordEnv] : undefined;
-  if ((cfg.userEnv || cfg.passwordEnv) && !(user && pass)) throw new Error(`upload: ${cfg.userEnv} and ${cfg.passwordEnv} must both be set`);
+  if ((cfg.userEnv || cfg.passwordEnv) && !(user && pass)) {
+    const missing = [
+      ["userEnv", cfg.userEnv, user],
+      ["passwordEnv", cfg.passwordEnv, pass],
+    ]
+      .filter(([, , value]) => !value)
+      .map(([key, name]) => name ?? key);
+    throw new Error(`upload: ${missing.join(" and ")} not set (basic auth needs both)`);
+  }
   const auth: Record<string, string> = user && pass ? { authorization: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64") } : {};
   const res = await fetch(cfg.url, {
     method: "PUT",

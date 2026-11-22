@@ -140,7 +140,6 @@ program
       if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
     }
 
-    console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
@@ -154,6 +153,7 @@ program
         }
       }
     }
+    console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
     if (failures > 0) process.exit(1);
   });
 
