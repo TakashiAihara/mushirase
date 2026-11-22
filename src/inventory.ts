@@ -5,8 +5,10 @@ import type { Asset } from "./types";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor", "dist", "build", ".venv"]);
 
+// A tag or tool version as a line ("8.3" = 8.3.x); calendar or zero-padded numbers ("2024.01", "08.3") are not semver and are dropped.
 function lineOf(spec: string): string | undefined {
-  return spec.match(/\d+(?:\.\d+)?/)?.[0];
+  const line = spec.match(/\d+(?:\.\d+)?/)?.[0];
+  return line && semver.validRange(line) ? line : undefined;
 }
 
 type Eco = "npm" | "composer" | "python";
@@ -22,16 +24,20 @@ function toRange(spec: string, eco: Eco): string | undefined {
     const p = v.split(".").map(Number);
     return p.length >= 3 ? `>=${v} <${p[0]}.${p[1] + 1}` : `>=${v} <${p[0] + 1}`;
   };
+  // Composer and PEP 440 pad a partial bound with zeros (>1.4 is >1.4.0), where npm reads it as the whole 1.4.x line.
+  const pad = (v: string) => [...v.split("."), "0", "0"].slice(0, Math.max(3, v.split(".").length)).join(".");
   const one = (part: string): string | undefined => {
     const m = part.trim().match(/^(~=|~|==|!=|\^|>=|<=|>|<|=)?\s*v?([\d.*x]+)$/);
     if (!m) return undefined;
     const v = m[2].replace(/\.\*$/, ".x");
     if (m[1] === "!=") return "";
-    if (m[1]?.startsWith("~")) return tilde(v);
-    return `${m[1] && m[1] !== "==" && m[1] !== "=" ? m[1] : ""}${v}`;
+    const r = m[1]?.startsWith("~") ? tilde(v) : /^[<>]/.test(m[1] ?? "") ? `${m[1]}${pad(v)}` : `${m[1] === "^" ? "^" : ""}${v}`;
+    return semver.validRange(r) ? r : undefined;
   };
-  const alternatives = s.split("||").map((alt) => alt.trim().split(eco === "python" ? /\s*,\s*/ : /\s*,\s*|\s+/).map(one));
-  // Parts semver cannot express ("dev-main", "@stable") are dropped, which only widens the range.
+  const glued = eco === "composer" ? s.replace(/(>=|<=|>|<|~|\^)\s+/g, "$1") : s;
+  const alternatives = glued.split("||").map((alt) => alt.trim().split(eco === "python" ? /\s*,\s*/ : /\s*,\s*|\s+/).map(one));
+  // Parts semver cannot express ("dev-main", "1.2.3.4", !=) are dropped: inside an AND that widens the range,
+  // and a branch alternative such as "|| dev-main" has no version for a notice to name anyway.
   const range = alternatives.map((parts) => parts.filter(Boolean).join(" ")).filter(Boolean).join(" || ");
   return range ? valid(range) : undefined;
 }
@@ -73,7 +79,7 @@ function fromGoMod(text: string, src: string): Asset[] {
 function fromRequirements(text: string, src: string): Asset[] {
   return text
     .split("\n")
-    .map((l) => l.replace(/#.*/, "").trim())
+    .map((l) => l.replace(/#.*/, "").replace(/\s--\S.*$/, "").replace(/\\$/, "").trim())
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
       const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!][^;#]*)?/);

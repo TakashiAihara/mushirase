@@ -24,8 +24,8 @@ test("npm specs are kept as semver ranges, invalid ones dropped", () => {
 });
 
 test("Composer tildes become npm ranges: two parts cover the major, three the minor", () => {
-  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3", zero: "~0.4", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", dev: "^1.0 || dev-main" } }) });
-  expect(spec(dir)).toEqual({ php: ">=8.3 <9", "laravel/framework": ">=11.2.0 <11.3", "drupal/core": "^10.3", zero: ">=0.4 <1", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", dev: "^1.0" });
+  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3", zero: "~0.4", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", spaced: ">= 7.4 < 8.4", gt: ">1.4", le: "<=1.4", four: "1.2.3.4 || ^2.0", dev: "^1.0 || dev-main" } }) });
+  expect(spec(dir)).toEqual({ php: ">=8.3 <9", "laravel/framework": ">=11.2.0 <11.3", "drupal/core": "^10.3", zero: ">=0.4 <1", either: "^7.4 || ^8.0", window: ">=7.4.0 <8.4.0", spaced: ">=7.4.0 <8.4.0", gt: ">1.4.0", le: "<=1.4.0", four: "^2.0", dev: "^1.0" });
 });
 
 test("go.mod keeps direct requires and the go line, not indirect, replace or exclude", () => {
@@ -34,17 +34,17 @@ test("go.mod keeps direct requires and the go line, not indirect, replace or exc
 });
 
 test("Python specifiers become npm ranges, including extras, ~=, ==x.*, closed ranges and exclusions", () => {
-  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\ncapped>=3.11,<3.13\nstar==2.32.*\nnope!=1.0\nmixed>=1.0,!=1.5\nspaced >= 5.1\n-e ./local\n";
-  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: ">=5.1", requests: "2.32.3", urllib3: ">=2.2 <3", idna: ">=3.7.1 <3.8", capped: ">=3.11 <3.13", star: "2.32.x", nope: null, mixed: ">=1.0", spaced: ">=5.1" });
+  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\ncapped>=3.11,<3.13\nstar==2.32.*\nnope!=1.0\nmixed>=1.0,!=1.5\nspaced >= 5.1\nhashed==2.0.1 \\\n    --hash=sha256:abc\npinned==1.4 --hash=sha256:def\n-e ./local\n";
+  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: ">=5.1.0", requests: "2.32.3", urllib3: ">=2.2 <3", idna: ">=3.7.1 <3.8", capped: ">=3.11.0 <3.13.0", star: "2.32.x", nope: null, mixed: ">=1.0.0", spaced: ">=5.1.0", hashed: "2.0.1", pinned: "1.4" });
 });
 
 test("requires-python is read as a Python specifier", () => {
-  expect(spec(repo("pyproj", { "pyproject.toml": '[project]\nname = "x"\nrequires-python = "~=3.11"\ndependencies = ["httpx>=0.27"]\n' }))).toEqual({ httpx: ">=0.27", python: ">=3.11 <4" });
+  expect(spec(repo("pyproj", { "pyproject.toml": '[project]\nname = "x"\nrequires-python = "~=3.11"\ndependencies = ["httpx>=0.27"]\n' }))).toEqual({ httpx: ">=0.27.0", python: ">=3.11 <4" });
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {
-  const d = "FROM localhost:5000/team/php:8.3-fpm AS base\n  FROM node:22-alpine\nFROM scratch\nFROM golang@sha256:abc\nFROM localhost:5000/team/app\nFROM base AS final\n";
-  expect(spec(repo("docker", { Dockerfile: d }))).toEqual({ php: "8.3", node: "22", golang: null, app: null });
+  const d = "FROM localhost:5000/team/php:8.3-fpm AS base\n  FROM node:22-alpine\nFROM scratch\nFROM golang@sha256:abc\nFROM localhost:5000/team/app\nFROM base AS final\nFROM ubuntu:2024.01\n";
+  expect(spec(repo("docker", { Dockerfile: d }))).toEqual({ php: "8.3", node: "22", golang: null, app: null, ubuntu: null });
 });
 
 test("mise tools written as tables or lists keep every version", () => {
