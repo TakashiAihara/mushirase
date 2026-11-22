@@ -15,7 +15,7 @@ type Config = {
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
-  rss?: { path: string; title?: string; upload?: UploadConfig };
+  rss?: { path?: string; title?: string; upload?: UploadConfig };
   state?: string;
 };
 
@@ -137,13 +137,13 @@ program
       // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
       // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
-      if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
+      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
     }
 
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
-      if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
+      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
       if (cfg.rss?.upload) {
         try {
           await uploadAtom(cfg.rss.upload, atom(cfg.rss.title ?? "mushirase", state.sent));

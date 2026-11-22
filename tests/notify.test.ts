@@ -44,3 +44,7 @@ test("credentials are refused for a plain-http upload URL that is not this machi
     delete process.env.MUSHIRASE_TEST_P;
   }
 });
+
+test("credentials embedded in a plain-http upload URL are refused too", async () => {
+  await expect(uploadAtom({ url: "http://writer:pw@dav.example.com/feed.atom" }, "x")).rejects.toThrow("credentials are only sent over https or to localhost");
+});

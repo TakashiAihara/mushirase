@@ -73,8 +73,8 @@ test("the feed is PUT to the upload URL with basic auth, and a rejected upload e
   const up = join(dir, "upload");
   mkdirSync(up);
   writeFileSync(join(up, "stack.yaml"), 'assets:\n  - { name: php, version: "8.3" }\n');
-  const cfg = (auth: string) =>
-    writeFileSync(join(up, "cfg.yaml"), `inventory: [stack.yaml]\nfeeds:\n  - { name: php, url: "${base}/feed", product: php }\nntfy: { url: "${base}", topic: t }\nrss: { path: feed.atom, upload: { url: "${base}/dav/feed.atom"${auth} } }\nstate: state.json\n`);
+  const cfg = (auth: string, path = "path: feed.atom, ") =>
+    writeFileSync(join(up, "cfg.yaml"), `inventory: [stack.yaml]\nfeeds:\n  - { name: php, url: "${base}/feed", product: php }\nntfy: { url: "${base}", topic: t }\nrss: { ${path}upload: { url: "${base}/dav/feed.atom"${auth} } }\nstate: state.json\n`);
   const run = async (env: Record<string, string>) => {
     const clean = { ...process.env };
     delete clean.U;
@@ -111,7 +111,7 @@ test("the feed is PUT to the upload URL with basic auth, and a rejected upload e
   expect(missing.err).toContain("upload: P not set (basic auth needs both)");
   expect(puts.length).toBe(3);
 
-  cfg("");
+  cfg("", "");
   expect((await run({})).code).toBe(0);
   expect(puts.length).toBe(4);
   expect(puts[3].auth).toBeNull();
