@@ -1,0 +1,55 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { authHeader } from "./llm";
+import type { Notice } from "./types";
+
+const KIND_JA = { "pre-announcement": "予告", release: "修正版", report: "報告" } as const;
+
+export function hitsLine(n: Notice): string {
+  const bySpec = new Map<string, Set<string>>();
+  for (const a of n.hits) {
+    const key = `${a.name}${a.version ? ` ${a.version}` : ""}`;
+    if (!bySpec.has(key)) bySpec.set(key, new Set());
+    bySpec.get(key)!.add(a.source.split("/")[0]);
+  }
+  return [...bySpec].map(([k, srcs]) => `${k} (${[...srcs].join(", ")})`).join(" / ");
+}
+
+export function render(n: Notice): { title: string; message: string } {
+  return {
+    title: `[${KIND_JA[n.kind]}] ${n.item.title}`,
+    message: [`当たり: ${hitsLine(n)}`, n.note ? `判定: ${n.note}` : "", n.item.summary.slice(0, 300)].filter(Boolean).join("\n"),
+  };
+}
+
+export type NtfyConfig = { url: string; topic: string; tokenEnv?: string };
+
+export async function sendNtfy(cfg: NtfyConfig, n: Notice): Promise<void> {
+  const { title, message } = render(n);
+  // JSON publish: header publishing cannot carry non-Latin-1 titles.
+  const res = await fetch(cfg.url.replace(/\/$/, ""), {
+    method: "POST",
+    signal: AbortSignal.timeout(30_000),
+    headers: { "content-type": "application/json", ...authHeader(cfg.tokenEnv) },
+    body: JSON.stringify({ topic: cfg.topic, title, message, click: n.item.link, priority: n.kind === "pre-announcement" ? 4 : 3, tags: ["rotating_light"] }),
+  });
+  if (!res.ok) throw new Error(`ntfy HTTP ${res.status}`);
+}
+
+const x = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+export type Sent = { notice: Notice; at: string };
+
+export function atom(title: string, sent: Sent[]): string {
+  const entries = sent.map(({ notice, at }) => {
+    const r = render(notice);
+    return `  <entry>\n    <id>${x(notice.item.id)}</id>\n    <title>${x(r.title)}</title>\n    <link href="${x(notice.item.link)}"/>\n    <updated>${at}</updated>\n    <content type="text">${x(r.message)}</content>\n  </entry>`;
+  });
+  const updated = sent[0]?.at ?? new Date(0).toISOString();
+  return `<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n  <id>urn:mushirase:${x(title)}</id>\n  <title>${x(title)}</title>\n  <updated>${updated}</updated>\n${entries.join("\n")}\n</feed>\n`;
+}
+
+export function writeAtom(path: string, title: string, sent: Sent[]): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, atom(title, sent));
+}
