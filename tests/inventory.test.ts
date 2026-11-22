@@ -23,9 +23,9 @@ test("npm specs are kept as semver ranges, invalid ones dropped", () => {
   expect(spec(dir)).toEqual({ next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: null, left: "2.1.3", node: ">=22.0.0" });
 });
 
-test("Composer tildes become npm ranges: two parts cover the major, three the minor", () => {
-  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3", zero: "~0.4", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", spaced: ">= 7.4 < 8.4", gt: ">1.4", le: "<=1.4", four: "1.2.3.4 || ^2.0", dev: "^1.0 || dev-main" } }) });
-  expect(spec(dir)).toEqual({ php: ">=8.3 <9", "laravel/framework": ">=11.2.0 <11.3", "drupal/core": "^10.3", zero: ">=0.4 <1", either: "^7.4 || ^8.0", window: ">=7.4.0 <8.4.0", spaced: ">=7.4.0 <8.4.0", gt: ">1.4.0", le: "<=1.4.0", four: "^2.0", dev: "^1.0" });
+test("Composer keeps exact pins only; ranges leave the package without a version", () => {
+  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "drupal/core": "^10.3", either: "^7.4 | ^8.0", exact: "1.2.3", "v-exact": "v2.0.1", four: "1.2.3.4", not: "!= 1.4" } }) });
+  expect(spec(dir)).toEqual({ php: null, "drupal/core": null, either: null, exact: "1.2.3", "v-exact": "2.0.1", four: null, not: null });
 });
 
 test("go.mod keeps direct requires and the go line, not indirect, replace or exclude", () => {
@@ -33,13 +33,13 @@ test("go.mod keeps direct requires and the go line, not indirect, replace or exc
   expect(spec(repo("go", { "go.mod": gomod }))).toEqual({ go: "1.23", "github.com/a/direct": "1.4" });
 });
 
-test("Python specifiers become npm ranges, including extras, ~=, ==x.*, closed ranges and exclusions", () => {
-  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\ncapped>=3.11,<3.13\nstar==2.32.*\nnope!=1.0\nmixed>=1.0,!=1.5\nspaced >= 5.1\nhashed==2.0.1 \\\n    --hash=sha256:abc\npinned==1.4 --hash=sha256:def\n-e ./local\n";
-  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: ">=5.1.0", requests: "2.32.3", urllib3: ">=2.2 <3", idna: ">=3.7.1 <3.8", capped: ">=3.11.0 <3.13.0", star: "2.32.x", nope: null, mixed: ">=1.0.0", spaced: ">=5.1.0", hashed: "2.0.1", pinned: "1.4" });
+test("Python keeps exact pins only, reads extras, hashes and continued lines", () => {
+  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\npinned==1.4 --hash=sha256:def\nhashed==2.0.1 \\\n    --hash=sha256:abc\ncontinued>=2.0, \\\n    <3.0\n-e ./local\n";
+  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: null, requests: "2.32.3", urllib3: null, pinned: "1.4", hashed: "2.0.1", continued: null });
 });
 
-test("requires-python is read as a Python specifier", () => {
-  expect(spec(repo("pyproj", { "pyproject.toml": '[project]\nname = "x"\nrequires-python = "~=3.11"\ndependencies = ["httpx>=0.27"]\n' }))).toEqual({ httpx: ">=0.27.0", python: ">=3.11 <4" });
+test("requires-python ranges leave python without a version", () => {
+  expect(spec(repo("pyproj", { "pyproject.toml": '[project]\nname = "x"\nrequires-python = "~=3.11"\ndependencies = ["httpx==0.27.2"]\n' }))).toEqual({ httpx: "0.27.2", python: null });
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {

@@ -3,10 +3,14 @@ import type { FeedItem } from "./types";
 
 // Atom bodies are taken raw: the parser reorders mixed xhtml content ("a <b>b</b> c" becomes "b a c").
 // RSS bodies are text (escaped or CDATA), so the parser's own decoding is kept and body() undoes the HTML layer.
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", stopNodes: ["feed.entry.content", "feed.entry.summary"] });
+// parseTagValue off: ids and titles are text, and "0001" must not become the number 1.
+const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", parseTagValue: false, stopNodes: ["feed.entry.content", "feed.entry.summary"] });
 
 function decode(s: string): string {
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
 }
 
 const arr = <T>(v: T | T[] | undefined): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);

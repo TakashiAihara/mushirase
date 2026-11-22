@@ -24,7 +24,8 @@ flowchart LR
 The chart leaves out two exceptions listed below: runtimes outside their own feed need a version line, and supply-chain items skip the version check for libraries.
 
 - Inventory: hand-written YAML for what no manifest declares, plus repository checkouts scanned for `package.json`, `composer.json`, `go.mod`, `requirements.txt`, `pyproject.toml`, `Dockerfile*`, `.mise.toml`, `.tool-versions` (direct dependencies only). Quote versions in YAML (`"8.10"`); an unquoted number is rejected because `8.10` would be read as `8.1`.
-- Versions are npm semver ranges and are compared with [semver](https://github.com/npm/node-semver) (`intersects`). npm specs are kept as written, and specs that are not ranges (`workspace:*`, `latest`, `file:`) leave the asset without a version, so it matches by name. Composer and Python specs are rewritten (`~8.3` and `~=8.3` → `>=8.3 <9`, `~8.3.1` → `>=8.3.1 <8.4`, `==2.32.*` → `2.32.x`, `>1.4` → `>1.4.0`, `>=3.11,<3.13` → `>=3.11.0 <3.13.0`); `!=` and parts semver cannot express (`dev-main`, `1.2.3.4`) are dropped. Dockerfile tags, `.mise.toml` and `.tool-versions` give a line such as `8.3` (= `8.3.x`); calendar or zero-padded tags (`2024.01`) give none.
+- Versions are npm semver ranges and are compared with [semver](https://github.com/npm/node-semver) (`intersects`). npm specs are kept as written, and specs that are not ranges (`workspace:*`, `latest`, `file:`) leave the asset without a version, so it matches by name. Composer and Python keep exact pins only (`1.2.3`, `==1.2.3`); their ranges (`~8.3`, `>=5.1`, `^7.4 | ^8.0`) are not semver and leave the asset without a version, which errs towards pushing. Dockerfile tags, `.mise.toml` and `.tool-versions` give a line such as `8.3` (= `8.3.x`); zero-padded tags (`24.04`, `08.3`) give none.
+- A version named in a notice is compared as its line: "PHP 8.3.30 released" is `8.3.x`, so it reaches a user pinned to `8.3.21` as well.
 - Hand-written versions must be valid npm semver ranges (`"8.3"`, `"^15.0.0"`, `">=22 <24"`); anything else is rejected at load time.
 - Project feeds (`product:` set) are about one product, so their items need not name it; version lines still apply. Spellings from different manifests are unified (`nodejs` = `node`, `golang` = `go`, `postgres` = `postgresql`, `react-dom` = `react`, `drupal` = `drupal/core`).
 - General feeds need the item to name an asset. Ambiguous names are matched by how notices write them (`next` → `Next.js`, `go` → `Golang`, or `Go` followed by a version); plain names shorter than 4 characters are skipped. Aliases are case-insensitive except `React` and `Rails`; a capitalised name you write yourself (`Express`) keeps its case.
@@ -42,7 +43,7 @@ bun run src/cli.ts run -c examples/mushirase.yaml --dry-run --max-age 60   # wha
 bun run src/cli.ts run -c examples/mushirase.yaml                          # push and record
 ```
 
-`run` exits 1 when a feed or a push fails; failed pushes are retried on the next run.
+`run` exits 1 when a feed or a push fails. A failed push is not recorded, so the next run retries it while the item is still in the feed and within `maxAgeDays`.
 
 ## Configuration
 

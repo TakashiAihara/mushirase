@@ -159,14 +159,13 @@ describe("lineHits", () => {
     expect(() => lineHits("8.3 stable", ["8.3.1"])).toThrow("unsupported version spec");
   });
 
-  test("bounds and 0.x follow semver on patch releases", () => {
-    expect(lineHits(">1.4", ["1.4.1"])).toBe(false);
-    expect(lineHits(">1.4.0", ["1.4.1"])).toBe(true);
-    expect(lineHits("<=1.4", ["1.4.5"])).toBe(true);
-    expect(lineHits("<=1.4.0", ["1.4.5"])).toBe(false);
+  test("a version named in a notice counts as its line, so a fix reaches users below it", () => {
+    expect(lineHits("2.1.3", ["2.1.4"])).toBe(true);
+    expect(lineHits("2.1.3", ["2.2.0"])).toBe(false);
+    expect(lineHits(">1.4.0", ["1.4.5"])).toBe(true);
+    expect(lineHits(">1.4", ["1.4.5"])).toBe(false);
     expect(lineHits("^0.4.1", ["0.4.3"])).toBe(true);
     expect(lineHits("^0.4.1", ["0.5.0"])).toBe(false);
-    expect(lineHits(">=0.4 <1", ["0.5.0"])).toBe(true);
     expect(lineHits("^7.4 || ^8.0", ["8.3.1"])).toBe(true);
     expect(lineHits("^7.4 || ^8.0", ["7.3.9"])).toBe(false);
     expect(lineHits("8.3", ["8.x.x"])).toBe(true);

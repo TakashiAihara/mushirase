@@ -13,33 +13,14 @@ function lineOf(spec: string): string | undefined {
 
 type Eco = "npm" | "composer" | "python";
 
-const valid = (r: string) => (semver.validRange(r) ? r : undefined);
-
-// Composer and Python ranges are rewritten into npm semver ranges, which matching hands to semver.
-// Composer's ~1.2 and Python's ~=1.2 are >=1.2 <2 (with three parts, >=1.2.3 <1.3); == pins; != cannot be expressed and is dropped.
+// npm specs are semver ranges and kept as written. Composer and PEP 440 ranges are not semver (">1.4" means >1.4.0 there,
+// "~1.2" means >=1.2 <2, "|" is OR), and rewriting them kept drifting, so only an exact pin ("1.2.3", "==1.2.3") is kept;
+// any other range leaves the asset without a version, which matches by name and errs towards pushing.
 function toRange(spec: string, eco: Eco): string | undefined {
   const s = spec.trim();
-  if (eco === "npm") return valid(s);
-  const tilde = (v: string) => {
-    const p = v.split(".").map(Number);
-    return p.length >= 3 ? `>=${v} <${p[0]}.${p[1] + 1}` : `>=${v} <${p[0] + 1}`;
-  };
-  // Composer and PEP 440 pad a partial bound with zeros (>1.4 is >1.4.0), where npm reads it as the whole 1.4.x line.
-  const pad = (v: string) => [...v.split("."), "0", "0"].slice(0, Math.max(3, v.split(".").length)).join(".");
-  const one = (part: string): string | undefined => {
-    const m = part.trim().match(/^(~=|~|==|!=|\^|>=|<=|>|<|=)?\s*v?([\d.*x]+)$/);
-    if (!m) return undefined;
-    const v = m[2].replace(/\.\*$/, ".x");
-    if (m[1] === "!=") return "";
-    const r = m[1]?.startsWith("~") ? tilde(v) : /^[<>]/.test(m[1] ?? "") ? `${m[1]}${pad(v)}` : `${m[1] === "^" ? "^" : ""}${v}`;
-    return semver.validRange(r) ? r : undefined;
-  };
-  const glued = eco === "composer" ? s.replace(/(>=|<=|>|<|~|\^)\s+/g, "$1") : s;
-  const alternatives = glued.split("||").map((alt) => alt.trim().split(eco === "python" ? /\s*,\s*/ : /\s*,\s*|\s+/).map(one));
-  // Parts semver cannot express ("dev-main", "1.2.3.4", !=) are dropped: inside an AND that widens the range,
-  // and a branch alternative such as "|| dev-main" has no version for a notice to name anyway.
-  const range = alternatives.map((parts) => parts.filter(Boolean).join(" ")).filter(Boolean).join(" || ");
-  return range ? valid(range) : undefined;
+  if (eco === "npm") return semver.validRange(s) ? s : undefined;
+  const pin = s.match(/^(?:==?)?\s*v?(\d+(?:\.\d+)*)$/)?.[1];
+  return pin && semver.validRange(pin) ? pin : undefined;
 }
 
 function fromPackageJson(text: string, src: string): Asset[] {
@@ -77,9 +58,11 @@ function fromGoMod(text: string, src: string): Asset[] {
 }
 
 function fromRequirements(text: string, src: string): Asset[] {
+  // A trailing backslash continues the requirement on the next line.
   return text
+    .replace(/\\\n/g, " ")
     .split("\n")
-    .map((l) => l.replace(/#.*/, "").replace(/\s--\S.*$/, "").replace(/\\$/, "").trim())
+    .map((l) => l.replace(/#.*/, "").replace(/\s--\S.*$/, "").trim())
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
       const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!][^;#]*)?/);

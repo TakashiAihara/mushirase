@@ -40,6 +40,13 @@ test("Atom summary is used when there is no content", () => {
   expect(parseFeed(xml, "f")[0].summary).toBe("only a summary");
 });
 
+test("numeric-looking ids stay text and numeric character references are decoded", () => {
+  const xml = `<rss><channel><item><guid>0001</guid><title>2026</title><description>PHP&amp;#32;8.3.30 fixes &#x41;</description></item><item><guid>1</guid><title>t</title></item></channel></rss>`;
+  const [a, b] = parseFeed(xml, "f");
+  expect([a.id, b.id, a.title]).toEqual(["0001", "1", "2026"]);
+  expect(a.summary).toBe("PHP 8.3.30 fixes A");
+});
+
 test("a document that is not a feed is an error", () => {
   expect(() => parseFeed("<html><body/></html>", "f")).toThrow("not an RSS/Atom feed");
 });

@@ -77,12 +77,12 @@ export function mentionedLines(text: string, name: string, caseSensitive = false
   return out;
 }
 
-// spec is an npm semver range ("8.3", "^15.0.0", ">=22", "<2"); a mentioned "8.3" is the range 8.3.x, "8.3.30" a single version.
-// Ranges are compared by semver itself: hand-written comparisons drifted on every bound and on 0.x.
+// A version named in a notice is usually the fixed one ("PHP 8.3.30 released"), and everyone on 8.3 below it needs it,
+// so it is compared as its line (8.3.x) against the asset's npm semver range, by semver itself.
 export function lineHits(spec: string, mentioned: string[]): boolean {
   if (!semver.validRange(spec)) throw new Error(`unsupported version spec: ${spec}`);
   return mentioned.some((v) => {
-    const r = semver.validRange(v);
+    const r = semver.validRange(v.split(".").slice(0, 2).join(".") + ".x");
     return r != null && semver.intersects(spec, r);
   });
 }
