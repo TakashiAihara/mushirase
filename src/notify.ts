@@ -43,7 +43,7 @@ export type Sent = { notice: Notice; at: string };
 export function atom(title: string, sent: Sent[]): string {
   const entries = sent.map(({ notice, at }) => {
     const r = render(notice);
-    return `  <entry>\n    <id>urn:mushirase:${x(encodeURIComponent(`${notice.item.feed}:${notice.item.id}`))}</id>\n    <title>${x(r.title)}</title>\n    <link href="${x(notice.item.link)}"/>\n    <updated>${at}</updated>\n    <content type="text">${x(r.message)}</content>\n  </entry>`;
+    return `  <entry>\n    <id>urn:mushirase:${x(`${encodeURIComponent(notice.item.feed)}:${encodeURIComponent(notice.item.id)}`)}</id>\n    <title>${x(r.title)}</title>\n    <link href="${x(notice.item.link)}"/>\n    <updated>${at}</updated>\n    <content type="text">${x(r.message)}</content>\n  </entry>`;
   });
   const updated = sent[0]?.at ?? new Date(0).toISOString();
   return `<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n  <id>urn:mushirase:${x(encodeURIComponent(title))}</id>\n  <title>${x(title)}</title>\n  <updated>${updated}</updated>\n  <author><name>mushirase</name></author>\n${entries.join("\n")}\n</feed>\n`;

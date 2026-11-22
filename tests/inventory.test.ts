@@ -18,14 +18,14 @@ function repo(name: string, files: Record<string, string>): string {
 
 const spec = (dir: string) => Object.fromEntries(scan(dir).map((a) => [a.name, a.version ?? null]));
 
-test("npm ranges keep their operator, npm tilde and exact pins keep the line, exclusions are dropped", () => {
-  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", ms: "~2.1", tiny: "^0.4.1", old: "<2", newer: ">1.4", not: "!=1.4" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
-  expect(spec(dir)).toEqual({ next: "^15.0", zod: "3.22", ms: "2.1", tiny: "^0.4", old: "<2", newer: ">1.4", not: null, left: "2.1", node: ">=22.0" });
+test("npm specs are kept as semver ranges, invalid ones dropped", () => {
+  const dir = repo("npm", { "package.json": JSON.stringify({ dependencies: { next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: "workspace:*" }, devDependencies: { left: "2.1.3" }, engines: { node: ">=22.0.0" } }) });
+  expect(spec(dir)).toEqual({ next: "^15.0.0", zod: "~3.22.1", old: "<2", lib: ">5.1.0", ws: null, left: "2.1.3", node: ">=22.0.0" });
 });
 
-test("a Composer tilde on two parts covers the major, on three parts the minor", () => {
-  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3" } }) });
-  expect(spec(dir)).toEqual({ php: "^8.3", "laravel/framework": "11.2", "drupal/core": "^10.3" });
+test("Composer tildes become npm ranges: two parts cover the major, three the minor", () => {
+  const dir = repo("composer", { "composer.json": JSON.stringify({ require: { php: "~8.3", "laravel/framework": "~11.2.0", "drupal/core": "^10.3", zero: "~0.4", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", dev: "^1.0 || dev-main" } }) });
+  expect(spec(dir)).toEqual({ php: ">=8.3 <9", "laravel/framework": ">=11.2.0 <11.3", "drupal/core": "^10.3", zero: ">=0.4 <1", either: "^7.4 || ^8.0", window: ">=7.4 <8.4", dev: "^1.0" });
 });
 
 test("go.mod keeps direct requires and the go line, not indirect, replace or exclude", () => {
@@ -33,8 +33,13 @@ test("go.mod keeps direct requires and the go line, not indirect, replace or exc
   expect(spec(repo("go", { "go.mod": gomod }))).toEqual({ go: "1.23", "github.com/a/direct": "1.4" });
 });
 
-test("requirements with extras keep their version", () => {
-  expect(spec(repo("py", { "requirements.txt": "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\n-e ./local\n" }))).toEqual({ django: ">=5.1", requests: "2.32", urllib3: "^2.2", idna: "3.7" });
+test("Python specifiers become npm ranges, including extras, ~=, ==x.*, closed ranges and exclusions", () => {
+  const req = "django[argon2]>=5.1\n# note\nrequests==2.32.3\nurllib3~=2.2\nidna~=3.7.1\ncapped>=3.11,<3.13\nstar==2.32.*\nnope!=1.0\nmixed>=1.0,!=1.5\nspaced >= 5.1\n-e ./local\n";
+  expect(spec(repo("py", { "requirements.txt": req }))).toEqual({ django: ">=5.1", requests: "2.32.3", urllib3: ">=2.2 <3", idna: ">=3.7.1 <3.8", capped: ">=3.11 <3.13", star: "2.32.x", nope: null, mixed: ">=1.0", spaced: ">=5.1" });
+});
+
+test("requires-python is read as a Python specifier", () => {
+  expect(spec(repo("pyproj", { "pyproject.toml": '[project]\nname = "x"\nrequires-python = "~=3.11"\ndependencies = ["httpx>=0.27"]\n' }))).toEqual({ httpx: ">=0.27", python: ">=3.11 <4" });
 });
 
 test("a Dockerfile image behind a registry port is named by its path", () => {
@@ -42,8 +47,9 @@ test("a Dockerfile image behind a registry port is named by its path", () => {
   expect(spec(repo("docker", { Dockerfile: d }))).toEqual({ php: "8.3", node: "22", golang: null, app: null });
 });
 
-test("mise tools written as tables or lists keep their version", () => {
-  expect(spec(repo("mise", { ".mise.toml": '[tools]\nbun = "1.4.5"\nnode = { version = "22.11" }\npython = ["3.12", "3.11"]\n' }))).toEqual({ bun: "1.4", node: "22.11", python: "3.12" });
+test("mise tools written as tables or lists keep every version", () => {
+  const assets = scan(repo("mise", { ".mise.toml": '[tools]\nbun = "1.4.5"\nnode = { version = "22.11" }\npython = ["3.12", "3.11"]\n' }));
+  expect(assets.map((a) => `${a.name} ${a.version}`)).toEqual(["bun 1.4", "node 22.11", "python 3.12", "python 3.11"]);
 });
 
 test("sources are labelled by the repository name even when scanned as .", () => {
@@ -61,8 +67,8 @@ test("an unquoted numeric version in a hand-written inventory is rejected", () =
   const f = join(root, "stack.yaml");
   writeFileSync(f, "assets:\n  - { name: php, version: 8.10 }\n");
   expect(() => loadInventory([f])).toThrow('quote the version of php');
-  writeFileSync(f, 'assets:\n  - { name: php, version: "~8.3" }\n');
-  expect(() => loadInventory([f])).toThrow('version of php must be like');
+  writeFileSync(f, 'assets:\n  - { name: php, version: "8.3 stable" }\n');
+  expect(() => loadInventory([f])).toThrow("version of php must be an npm semver range");
   writeFileSync(f, 'assets:\n  - { name: php, version: "8.10" }\n');
   expect(loadInventory([f])).toEqual([{ name: "php", version: "8.10", source: "stack.yaml" }]);
 });

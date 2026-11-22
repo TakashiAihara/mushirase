@@ -1,3 +1,4 @@
+import semver from "semver";
 import type { Asset, FeedItem, Kind, Notice } from "./types";
 
 // Different manifests spell the same product differently (.tool-versions says nodejs, Dockerfile says postgres).
@@ -76,39 +77,13 @@ export function mentionedLines(text: string, name: string, caseSensitive = false
   return out;
 }
 
-const nums = (s: string) => s.split(".").map(Number);
-
-// Compares over the shorter of the two, so "8" against "8.3" is equal (one covers the other).
-function cmp(a: number[], b: number[]): number {
-  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
-  return 0;
-}
-
-export const SPEC = /^(\^|>=|>|<=|<)?(\d+(?:\.\d+)*)$/;
-
-// spec is a line ("8.3"), a caret range ("^15.0": same major, this minor or later; "^0.4" stays on 0.4 as npm's caret does)
-// or a bound (">=22", ">22", "<2", "<=1.4").
+// spec is an npm semver range ("8.3", "^15.0.0", ">=22", "<2"); a mentioned "8.3" is the range 8.3.x, "8.3.30" a single version.
+// Ranges are compared by semver itself: hand-written comparisons drifted on every bound and on 0.x.
 export function lineHits(spec: string, mentioned: string[]): boolean {
-  const m = spec.match(SPEC);
-  if (!m) throw new Error(`unsupported version spec: ${spec}`);
-  const base = nums(m[2]);
-  return mentioned.some((raw) => {
-    const v = nums(raw.replace(/\.x$/, ""));
-    const c = cmp(v, base);
-    switch (m[1]) {
-      case "^":
-        return base[0] === 0 ? c === 0 : v[0] === base[0] && c >= 0;
-      case ">=":
-        return c >= 0;
-      case ">":
-        return c > 0;
-      case "<=":
-        return c <= 0;
-      case "<":
-        return c < 0;
-      default:
-        return c === 0;
-    }
+  if (!semver.validRange(spec)) throw new Error(`unsupported version spec: ${spec}`);
+  return mentioned.some((v) => {
+    const r = semver.validRange(v);
+    return r != null && semver.intersects(spec, r);
   });
 }
 

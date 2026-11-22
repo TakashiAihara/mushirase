@@ -147,8 +147,29 @@ describe("lineHits", () => {
     expect(lineHits("<=1.4", ["1.5"])).toBe(false);
   });
 
+  test("a bound compares the patch part, and a shorter line overlapping the bound is a hit", () => {
+    expect(lineHits(">5.1.0", ["5.1.9"])).toBe(true);
+    expect(lineHits(">5.1.0", ["5.0.4"])).toBe(false);
+    expect(lineHits("<5.3.2", ["5.3"])).toBe(true);
+    expect(lineHits("<5.3.2", ["5.4"])).toBe(false);
+    expect(lineHits("^5.3.2", ["5.3"])).toBe(true);
+  });
+
   test("an unsupported spec is an error, not a silent miss", () => {
-    expect(() => lineHits("~8.3", ["8.3.1"])).toThrow("unsupported version spec");
+    expect(() => lineHits("8.3 stable", ["8.3.1"])).toThrow("unsupported version spec");
+  });
+
+  test("bounds and 0.x follow semver on patch releases", () => {
+    expect(lineHits(">1.4", ["1.4.1"])).toBe(false);
+    expect(lineHits(">1.4.0", ["1.4.1"])).toBe(true);
+    expect(lineHits("<=1.4", ["1.4.5"])).toBe(true);
+    expect(lineHits("<=1.4.0", ["1.4.5"])).toBe(false);
+    expect(lineHits("^0.4.1", ["0.4.3"])).toBe(true);
+    expect(lineHits("^0.4.1", ["0.5.0"])).toBe(false);
+    expect(lineHits(">=0.4 <1", ["0.5.0"])).toBe(true);
+    expect(lineHits("^7.4 || ^8.0", ["8.3.1"])).toBe(true);
+    expect(lineHits("^7.4 || ^8.0", ["7.3.9"])).toBe(false);
+    expect(lineHits("8.3", ["8.x.x"])).toBe(true);
   });
 
   test("an exact line, a patch under the line, a major covering the line, and a wildcard all overlap", () => {

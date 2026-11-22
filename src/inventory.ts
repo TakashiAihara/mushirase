@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
-import { SPEC } from "./match";
+import semver from "semver";
 import type { Asset } from "./types";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor", "dist", "build", ".venv"]);
@@ -9,18 +9,31 @@ function lineOf(spec: string): string | undefined {
   return spec.match(/\d+(?:\.\d+)?/)?.[0];
 }
 
-// Ranges keep their operator so matching can treat them as ranges. In Composer and Python (tildeMajor) a tilde on two parts
-// (~8.3, ~=2.2) means "this major", like ^; npm's tilde and any tilde on three parts (~3.22.1, ~=2.2.1) pin the minor, so only the line is kept.
-// shortcut: compound and closed ranges (">=3.11,<3.13", "^1 || ^2", "1.2 - 2.0") keep the first bound only.
-function lineOfRange(spec: string, tildeMajor = false): string | undefined {
+type Eco = "npm" | "composer" | "python";
+
+const valid = (r: string) => (semver.validRange(r) ? r : undefined);
+
+// Composer and Python ranges are rewritten into npm semver ranges, which matching hands to semver.
+// Composer's ~1.2 and Python's ~=1.2 are >=1.2 <2 (with three parts, >=1.2.3 <1.3); == pins; != cannot be expressed and is dropped.
+function toRange(spec: string, eco: Eco): string | undefined {
   const s = spec.trim();
-  const line = lineOf(s);
-  if (!line || s.startsWith("!")) return undefined;
-  const op = s.match(/^(\^|~=?|>=|>|<=|<)/)?.[1];
-  const parts = s.match(/\d+(?:\.\d+)*/)![0].split(".").length;
-  if (op === "^" || (tildeMajor && op?.startsWith("~") && parts === 2)) return `^${line}`;
-  if (op && !op.startsWith("~")) return `${op}${line}`;
-  return line;
+  if (eco === "npm") return valid(s);
+  const tilde = (v: string) => {
+    const p = v.split(".").map(Number);
+    return p.length >= 3 ? `>=${v} <${p[0]}.${p[1] + 1}` : `>=${v} <${p[0] + 1}`;
+  };
+  const one = (part: string): string | undefined => {
+    const m = part.trim().match(/^(~=|~|==|!=|\^|>=|<=|>|<|=)?\s*v?([\d.*x]+)$/);
+    if (!m) return undefined;
+    const v = m[2].replace(/\.\*$/, ".x");
+    if (m[1] === "!=") return "";
+    if (m[1]?.startsWith("~")) return tilde(v);
+    return `${m[1] && m[1] !== "==" && m[1] !== "=" ? m[1] : ""}${v}`;
+  };
+  const alternatives = s.split("||").map((alt) => alt.trim().split(eco === "python" ? /\s*,\s*/ : /\s*,\s*|\s+/).map(one));
+  // Parts semver cannot express ("dev-main", "@stable") are dropped, which only widens the range.
+  const range = alternatives.map((parts) => parts.filter(Boolean).join(" ")).filter(Boolean).join(" || ");
+  return range ? valid(range) : undefined;
 }
 
 function fromPackageJson(text: string, src: string): Asset[] {
@@ -28,10 +41,10 @@ function fromPackageJson(text: string, src: string): Asset[] {
   const out: Asset[] = [];
   for (const key of ["dependencies", "devDependencies"]) {
     for (const [name, spec] of Object.entries<string>(j[key] ?? {})) {
-      out.push({ name, version: lineOfRange(String(spec)), source: src });
+      out.push({ name, version: toRange(String(spec), "npm"), source: src });
     }
   }
-  if (j.engines?.node) out.push({ name: "node", version: lineOfRange(j.engines.node), source: src });
+  if (j.engines?.node) out.push({ name: "node", version: toRange(j.engines.node, "npm"), source: src });
   return out;
 }
 
@@ -39,7 +52,7 @@ function fromComposerJson(text: string, src: string): Asset[] {
   const j = JSON.parse(text);
   return Object.entries<string>(j.require ?? {}).map(([name, spec]) => ({
     name,
-    version: lineOfRange(String(spec), true),
+    version: toRange(String(spec), "composer"),
     source: src,
   }));
 }
@@ -63,8 +76,8 @@ function fromRequirements(text: string, src: string): Asset[] {
     .map((l) => l.replace(/#.*/, "").trim())
     .filter((l) => l && !l.startsWith("-"))
     .map((l) => {
-      const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!]=?\s*[\d.]+)?/);
-      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? lineOfRange(m[2], true) : undefined, source: src };
+      const m = l.match(/^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([=<>~!][^;#]*)?/);
+      return { name: (m?.[1] ?? l).toLowerCase(), version: m?.[2] ? toRange(m[2], "python") : undefined, source: src };
     });
 }
 
@@ -72,7 +85,7 @@ function fromPyproject(text: string, src: string): Asset[] {
   const t = Bun.TOML.parse(text) as { project?: { dependencies?: string[]; "requires-python"?: string } };
   const out = fromRequirements((t.project?.dependencies ?? []).join("\n"), src);
   const py = t.project?.["requires-python"];
-  if (py) out.push({ name: "python", version: lineOfRange(py, true), source: src });
+  if (py) out.push({ name: "python", version: toRange(py, "python"), source: src });
   return out;
 }
 
@@ -96,9 +109,9 @@ function fromDockerfile(text: string, src: string): Asset[] {
 
 function fromMise(text: string, src: string): Asset[] {
   const t = Bun.TOML.parse(text) as { tools?: Record<string, unknown> };
-  return Object.entries(t.tools ?? {}).map(([name, v]) => {
-    const spec = Array.isArray(v) ? v[0] : typeof v === "object" && v !== null ? (v as { version?: unknown }).version : v;
-    return { name, version: spec == null ? undefined : lineOf(String(spec)), source: src };
+  return Object.entries(t.tools ?? {}).flatMap(([name, v]) => {
+    const specs = Array.isArray(v) ? v : [typeof v === "object" && v !== null ? (v as { version?: unknown }).version : v];
+    return specs.map((spec) => ({ name, version: spec == null ? undefined : lineOf(String(spec)), source: src }));
   });
 }
 
@@ -157,7 +170,7 @@ export function loadInventory(paths: string[]): Asset[] {
     for (const a of doc.assets ?? []) {
       // An unquoted 8.10 is the number 8.1 by the time it is read, so only strings are accepted.
       if (a.version != null && typeof a.version !== "string") throw new Error(`${p}: quote the version of ${a.name} ("${a.version}")`);
-      if (a.version != null && !SPEC.test(a.version)) throw new Error(`${p}: version of ${a.name} must be like "8.3", "^15.0", ">=22" or "<2", got "${a.version}"`);
+      if (a.version != null && !semver.validRange(a.version)) throw new Error(`${p}: version of ${a.name} must be an npm semver range ("8.3", "^15.0.0", ">=22 <24"), got "${a.version}"`);
       out.push({ ...a, source: a.source ?? basename(p) });
     }
   }
