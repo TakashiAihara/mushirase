@@ -6,7 +6,7 @@ import { fetchFeed } from "./feeds";
 import { loadInventory, scan } from "./inventory";
 import { judge, type LlmConfig } from "./llm";
 import { match } from "./match";
-import { hitsLine, render, sendNtfy, writeAtom, type NtfyConfig, type Sent } from "./notify";
+import { atom, hitsLine, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
 import type { FeedItem, Notice } from "./types";
 
 type Config = {
@@ -15,7 +15,7 @@ type Config = {
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
-  rss?: { path: string; title?: string };
+  rss?: { path: string; title?: string; upload?: UploadConfig };
   state?: string;
 };
 
@@ -145,6 +145,14 @@ program
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
       if (cfg.rss) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
+      if (cfg.rss?.upload) {
+        try {
+          await uploadAtom(cfg.rss.upload, atom(cfg.rss.title ?? "mushirase", state.sent));
+        } catch (e) {
+          failures++;
+          console.error(`rss upload failed: ${(e as Error).message}`);
+        }
+      }
     }
     if (failures > 0) process.exit(1);
   });

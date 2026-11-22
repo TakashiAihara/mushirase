@@ -50,6 +50,24 @@ export function atom(title: string, sent: Sent[]): string {
   return `<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n  <id>urn:mushirase:${x(encodeURIComponent(title))}</id>\n  <title>${x(title)}</title>\n  <updated>${updated}</updated>\n  <author><name>mushirase</name></author>\n${entries.join("\n")}\n</feed>\n`;
 }
 
+export type UploadConfig = { url: string; userEnv?: string; passwordEnv?: string };
+
+// PUT the feed where a reader can fetch it (a WebDAV folder the run can write but not read is enough).
+export async function uploadAtom(cfg: UploadConfig, body: string): Promise<void> {
+  const user = cfg.userEnv ? process.env[cfg.userEnv] : undefined;
+  const pass = cfg.passwordEnv ? process.env[cfg.passwordEnv] : undefined;
+  if ((cfg.userEnv || cfg.passwordEnv) && !(user && pass)) throw new Error(`upload: ${cfg.userEnv} and ${cfg.passwordEnv} must both be set`);
+  const auth: Record<string, string> = user && pass ? { authorization: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64") } : {};
+  const res = await fetch(cfg.url, {
+    method: "PUT",
+    redirect: "manual",
+    signal: AbortSignal.timeout(30_000),
+    headers: { "content-type": "application/atom+xml; charset=utf-8", ...auth },
+    body,
+  });
+  if (!res.ok) throw new Error(`upload HTTP ${res.status}`);
+}
+
 // Written to a temporary file and renamed, so a reader never sees a half-written feed.
 export function writeAtom(path: string, title: string, sent: Sent[]): void {
   mkdirSync(dirname(path), { recursive: true });
