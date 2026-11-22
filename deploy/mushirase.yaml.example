@@ -16,5 +16,7 @@ feeds:
 
 ntfy: { url: "https://ntfy.example.com", topic: mushirase, tokenEnv: MUSHIRASE_NTFY_TOKEN }
 
-rss: { path: "/var/lib/mushirase/feed.atom", title: "mushirase" }
+rss:
+  - { path: "/var/lib/mushirase/pre.atom", title: "mushirase 予告", kind: pre-announcement }
+  - { path: "/var/lib/mushirase/fix.atom", title: "mushirase 修正", kind: fix }
 state: /var/lib/mushirase/state.json

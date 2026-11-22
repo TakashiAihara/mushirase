@@ -6,8 +6,8 @@ import { fetchFeed } from "./feeds";
 import { loadInventory, scan } from "./inventory";
 import { judge, type LlmConfig } from "./llm";
 import { match } from "./match";
-import { atom, hitsLine, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
-import type { FeedItem, Notice } from "./types";
+import { atom, hitsLine, kindOf, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
+import type { FeedItem, Kind, Notice } from "./types";
 
 type Config = {
   inventory: string[];
@@ -15,13 +15,18 @@ type Config = {
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
-  rss?: { path?: string; title?: string; upload?: UploadConfig };
+  // One feed, or several split by kind (pre-announcement / fix) so a reader can subscribe to each.
+  rss?: RssConfig | RssConfig[];
   state?: string;
 };
+
+type RssConfig = { path?: string; title?: string; kind?: Kind; upload?: UploadConfig };
 
 type State = { seen: Record<string, string>; sent: Sent[] };
 
 const RSS_KEEP = 100;
+
+const entriesFor = (r: RssConfig, sent: Sent[]) => (r.kind ? sent.filter(({ notice }) => kindOf(notice) === r.kind) : sent);
 
 // Feeds are independent sources, so the same guid in two feeds must not suppress each other.
 const seenKey = (item: FeedItem) => `${item.feed}\n${item.id}`;
@@ -66,6 +71,7 @@ program
     const at = (p: string) => resolve(base, p);
     const assets = loadInventory(cfg.inventory.map(at));
     const statePath = at(cfg.state ?? ".mushirase/state.json");
+    const rssFeeds = cfg.rss ? [cfg.rss].flat() : [];
     const state = loadState(statePath);
     const maxAge = Number(opts.maxAge ?? cfg.maxAgeDays ?? 7);
     if (!Number.isFinite(maxAge) || maxAge <= 0) throw new Error(`max age must be a positive number of days, got ${opts.maxAge ?? cfg.maxAgeDays}`);
@@ -119,7 +125,7 @@ program
 
     for (const n of notices) {
       const r = render(n);
-      console.log(`  ✔  ${r.title}\n     当たり: ${hitsLine(n)}${n.note ? `\n     判定: ${n.note}` : ""}\n     ${n.item.link}`);
+      console.log(`  ✔  ${r.title}\n     当たり: ${hitsLine(n)}${n.why ? `\n     根拠: ${n.why}` : ""}${n.note ? `\n     判定: ${n.note}` : ""}\n     ${n.item.link}`);
       if (opts.dryRun) continue;
       if (cfg.ntfy) {
         try {
@@ -137,19 +143,20 @@ program
       // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
       // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
-      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
+      for (const r of rssFeeds) if (r.path) writeAtom(at(r.path), r.title ?? "mushirase", entriesFor(r, state.sent.slice(0, RSS_KEEP)));
     }
 
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
-      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
-      if (cfg.rss?.upload) {
+      for (const r of rssFeeds) {
+        if (r.path) writeAtom(at(r.path), r.title ?? "mushirase", entriesFor(r, state.sent));
+        if (!r.upload) continue;
         try {
-          await uploadAtom(cfg.rss.upload, atom(cfg.rss.title ?? "mushirase", state.sent));
+          await uploadAtom(r.upload, atom(r.title ?? "mushirase", entriesFor(r, state.sent)));
         } catch (e) {
           failures++;
-          console.error(`rss upload failed: ${(e as Error).message}`);
+          console.error(`rss upload failed (${r.upload.url}): ${(e as Error).message}`);
         }
       }
     }

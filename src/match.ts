@@ -45,8 +45,21 @@ const SUPPLY_CHAIN = /malicious|malware|compromis|backdoor/i;
 // so outside their own feed they need a version line, overlapping the asset when the asset has one.
 const RUNTIMES = new Set(["php", "python", "node", "go", "ruby", "java", "postgresql", "mysql", "nginx", "openssl"]);
 
-const PRE = /\bupcoming\b|\bscheduled for\b|\bwill be released\b|pre-?announce|advance notice|予告/i;
-const RELEASE = /\breleased?\b/i;
+// "Critical PHP update on Wednesday, October 21": a release named by the day it will happen.
+const ON_DAY = /\b(?:update|release)s? (?:on|for) (?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
+const PRE = new RegExp(`\\bupcoming\\b|\\bscheduled for\\b|\\bwill be released\\b|pre-?announce|advance notice|予告|${ON_DAY.source}`, "i");
+
+const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\breleas(?:e|ed|es)\b|\breleas(?:e|ed|es)\b.*\b\d+\.\d+/i;
+
+// A post is about a vulnerability when its title says so, or when its title announces a release (upcoming, or a version)
+// and its body says that release is a security one. Blog posts that only mention security in the body ("more secure") do not pass.
+function securityWording(item: FeedItem): string | null {
+  const inTitle = item.title.match(SECURITY);
+  if (inTitle) return `題名「${inTitle[0]}」`;
+  if (!PRE.test(item.title) && !VERSION_RELEASE.test(item.title)) return null;
+  const inBody = item.summary.match(SECURITY);
+  return inBody ? `題名がリリース・予告で、本文「${inBody[0]}」` : null;
+}
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -93,16 +106,14 @@ function mentions(text: string, n: Name): boolean {
 }
 
 function kindOf(item: FeedItem): Kind {
-  const t = `${item.title} ${item.summary.slice(0, 600)}`;
-  if (PRE.test(t)) return "pre-announcement";
-  if (RELEASE.test(item.title)) return "release";
-  return "report";
+  return PRE.test(`${item.title} ${item.summary.slice(0, 600)}`) ? "pre-announcement" : "fix";
 }
 
 // product: the feed belongs to one product, so its items need no mention of the name; version lines still apply.
 export function match(item: FeedItem, assets: Asset[], product?: string): Notice | null {
   const text = `${item.title}\n${item.summary}`;
-  if (!SECURITY.test(text)) return null;
+  const why = securityWording(item);
+  if (!why) return null;
   const supplyChain = SUPPLY_CHAIN.test(text);
 
   const hits: Asset[] = [];
@@ -120,5 +131,5 @@ export function match(item: FeedItem, assets: Asset[], product?: string): Notice
     hits.push(a);
   }
   if (hits.length === 0) return null;
-  return { item, kind: kindOf(item), hits };
+  return { item, kind: kindOf(item), hits, why };
 }

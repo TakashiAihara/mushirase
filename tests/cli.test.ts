@@ -97,7 +97,7 @@ test("the feed is PUT to the upload URL with basic auth, and a rejected upload e
   status = 403;
   const rejected = await run({ U: "writer", P: "secret" });
   expect(rejected.code).toBe(1);
-  expect(rejected.err).toContain("rss upload failed: upload HTTP 403");
+  expect(rejected.err).toContain("upload HTTP 403");
   expect(rejected.out).toContain("0 hit, 1 failure(s)");
 
   status = 302;
@@ -117,4 +117,34 @@ test("the feed is PUT to the upload URL with basic auth, and a rejected upload e
   expect(puts[3].auth).toBeNull();
 
   server.stop(true);
+});
+
+test("rss split by kind writes pre-announcements and fixes to separate feeds", async () => {
+  const mixed = `<rss><channel>
+<item><guid>p</guid><title>Upcoming PHP Security Release</title><link>https://x/p</link><pubDate>${now}</pubDate></item>
+<item><guid>f</guid><title>PHP 8.3.30 Released</title><description>This is a security release.</description><link>https://x/f</link><pubDate>${now}</pubDate></item>
+</channel></rss>`;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (req) => (new URL(req.url).pathname === "/feed" ? new Response(mixed) : new Response("{}")),
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  const sp = join(dir, "split");
+  mkdirSync(sp);
+  writeFileSync(join(sp, "stack.yaml"), 'assets:\n  - { name: php, version: "8.3" }\n');
+  writeFileSync(join(sp, "cfg.yaml"), `inventory: [stack.yaml]\nfeeds:\n  - { name: php, url: "${base}/feed", product: php }\nntfy: { url: "${base}", topic: t }\nrss:\n  - { path: pre.atom, kind: pre-announcement }\n  - { path: fix.atom, kind: fix }\n  - { path: all.atom }\nstate: state.json\n`);
+  const p = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "run", "-c", join(sp, "cfg.yaml")], { stdout: "ignore", stderr: "ignore" });
+  expect(await p.exited).toBe(0);
+  server.stop(true);
+
+  const pre = readFileSync(join(sp, "pre.atom"), "utf8");
+  const fix = readFileSync(join(sp, "fix.atom"), "utf8");
+  const all = readFileSync(join(sp, "all.atom"), "utf8");
+  expect(pre).toContain("<title>[予告] Upcoming PHP Security Release</title>");
+  expect(pre).not.toContain("8.3.30");
+  expect(fix).toContain("<title>[修正] PHP 8.3.30 Released</title>");
+  expect(fix).not.toContain("Upcoming");
+  expect(all).toContain("Upcoming");
+  expect(all).toContain("8.3.30");
 });
