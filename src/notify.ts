@@ -65,6 +65,11 @@ export async function uploadAtom(cfg: UploadConfig, body: string): Promise<void>
       .map(([key, name]) => name ?? key);
     throw new Error(`upload: ${missing.join(" and ")} not set (basic auth needs both)`);
   }
+  // Basic auth is plain text on the wire, so credentials only go over https or to this machine.
+  const target = new URL(cfg.url);
+  if (user && pass && target.protocol !== "https:" && !["127.0.0.1", "localhost", "[::1]"].includes(target.hostname)) {
+    throw new Error(`upload: credentials are only sent over https or to localhost, got ${target.protocol}//${target.hostname}`);
+  }
   const auth: Record<string, string> = user && pass ? { authorization: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64") } : {};
   const res = await fetch(cfg.url, {
     method: "PUT",

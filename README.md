@@ -79,7 +79,7 @@ See `examples/mushirase.yaml` and `examples/stack.yaml`. Paths are relative to t
 | `maxAgeDays` | ignore older items (default 7) |
 | `llm` | `{url, model, apiKeyEnv?, reasoningEffort?}` for any OpenAI-compatible endpoint |
 | `ntfy` | `{url, topic, tokenEnv?}` |
-| `rss` | `{path, title?, upload?}`: an Atom feed of what was pushed (last 100). `upload: {url, userEnv?, passwordEnv?}` PUTs it after each run, e.g. to a WebDAV folder the run may write (Create + Update) but not read. Without both env names it sends no credentials; use an https URL, since basic auth is not encrypted |
+| `rss` | `{path, title?, upload?}`: an Atom feed of what was pushed (last 100). `upload: {url, userEnv?, passwordEnv?}` PUTs it after each run, e.g. to a WebDAV folder the run may write (Create + Update) but not read. Without both env names it sends no credentials; with them, only https or localhost URLs are accepted, since basic auth is not encrypted |
 | `state` | state file (default `.mushirase/state.json`) |
 
 The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice; an item it rejects is not recorded and is judged again on every run while it stays in the window (for items without a date, as long as the feed lists them). A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured. Feed text goes into the prompt as is, so a crafted post can talk the model into rejecting itself.
