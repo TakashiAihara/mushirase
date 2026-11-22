@@ -6,22 +6,34 @@ import { fetchFeed } from "./feeds";
 import { loadInventory, scan } from "./inventory";
 import { judge, type LlmConfig } from "./llm";
 import { match } from "./match";
-import { atom, hitsLine, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
-import type { FeedItem, Notice } from "./types";
+import { atom, hitsLine, kindOf, render, sendNtfy, uploadAtom, writeAtom, type NtfyConfig, type Sent, type UploadConfig } from "./notify";
+import type { FeedItem, Kind, Notice } from "./types";
 
 type Config = {
   inventory: string[];
-  feeds: { name: string; url: string; product?: string }[];
+  // securityOnly: every item of the feed is a vulnerability notice (an advisory feed), so the title is not checked.
+  feeds: { name: string; url: string; product?: string; securityOnly?: boolean }[];
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
-  rss?: { path?: string; title?: string; upload?: UploadConfig };
+  // One feed, or several split by kind (pre-announcement / fix) so a reader can subscribe to each.
+  rss?: RssConfig | RssConfig[];
   state?: string;
 };
+
+type RssConfig = { path?: string; title?: string; kind?: Kind; upload?: UploadConfig };
 
 type State = { seen: Record<string, string>; sent: Sent[] };
 
 const RSS_KEEP = 100;
+
+const entriesFor = (r: RssConfig, sent: Sent[]) => (r.kind ? sent.filter(({ notice }) => kindOf(notice) === r.kind) : sent);
+
+// The feed id comes from the title, so split feeds without a title still get distinct ids.
+const titleOf = (r: RssConfig) => r.title ?? (r.kind ? `mushirase ${r.kind}` : "mushirase");
+
+// Credentials may sit in the URL, so the log names only the host and path.
+const where = (url: string) => URL.canParse(url) ? `${new URL(url).host}${new URL(url).pathname}` : "(invalid url)";
 
 // Feeds are independent sources, so the same guid in two feeds must not suppress each other.
 const seenKey = (item: FeedItem) => `${item.feed}\n${item.id}`;
@@ -66,6 +78,10 @@ program
     const at = (p: string) => resolve(base, p);
     const assets = loadInventory(cfg.inventory.map(at));
     const statePath = at(cfg.state ?? ".mushirase/state.json");
+    const rssFeeds = cfg.rss ? [cfg.rss].flat() : [];
+    for (const r of rssFeeds) {
+      if (r.kind !== undefined && r.kind !== "pre-announcement" && r.kind !== "fix") throw new Error(`rss kind must be pre-announcement or fix, got ${r.kind}`);
+    }
     const state = loadState(statePath);
     const maxAge = Number(opts.maxAge ?? cfg.maxAgeDays ?? 7);
     if (!Number.isFinite(maxAge) || maxAge <= 0) throw new Error(`max age must be a positive number of days, got ${opts.maxAge ?? cfg.maxAgeDays}`);
@@ -93,7 +109,7 @@ program
         // NOTE: items without a parsable date are treated as new; add a per-feed date override if a feed lacks dates.
         if (!Number.isNaN(t) && t < cutoff) continue;
         checked++;
-        const n = match(item, assets, f.product);
+        const n = match(item, assets, f.product, f.securityOnly === true);
         if (!n) {
           if (opts.all) console.log(`  -  ${f.name}: ${item.title}`);
           if (!opts.dryRun) state.seen[key] = new Date().toISOString();
@@ -119,7 +135,7 @@ program
 
     for (const n of notices) {
       const r = render(n);
-      console.log(`  ✔  ${r.title}\n     当たり: ${hitsLine(n)}${n.note ? `\n     判定: ${n.note}` : ""}\n     ${n.item.link}`);
+      console.log(`  ✔  ${r.title}\n     当たり: ${hitsLine(n)}${n.why ? `\n     根拠: ${n.why}` : ""}${n.note ? `\n     判定: ${n.note}` : ""}\n     ${n.item.link}`);
       if (opts.dryRun) continue;
       if (cfg.ntfy) {
         try {
@@ -137,19 +153,20 @@ program
       // Saved after every push, so a run stopped midway (a scheduler timeout) does not push the recorded items again.
       // An item cut off while its push was in flight is not recorded and is pushed again: delivery is at least once.
       saveState(statePath, state);
-      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent.slice(0, RSS_KEEP));
+      for (const r of rssFeeds) if (r.path) writeAtom(at(r.path), titleOf(r), entriesFor(r, state.sent.slice(0, RSS_KEEP)));
     }
 
     if (!opts.dryRun) {
       state.sent = state.sent.slice(0, RSS_KEEP);
       saveState(statePath, state);
-      if (cfg.rss?.path) writeAtom(at(cfg.rss.path), cfg.rss.title ?? "mushirase", state.sent);
-      if (cfg.rss?.upload) {
+      for (const r of rssFeeds) {
+        if (r.path) writeAtom(at(r.path), titleOf(r), entriesFor(r, state.sent));
+        if (!r.upload) continue;
         try {
-          await uploadAtom(cfg.rss.upload, atom(cfg.rss.title ?? "mushirase", state.sent));
+          await uploadAtom(r.upload, atom(titleOf(r), entriesFor(r, state.sent)));
         } catch (e) {
           failures++;
-          console.error(`rss upload failed: ${(e as Error).message}`);
+          console.error(`rss upload failed (${where(r.upload.url)}): ${(e as Error).message}`);
         }
       }
     }

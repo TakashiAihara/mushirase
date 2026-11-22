@@ -22,7 +22,7 @@ describe("project feeds", () => {
 
   test("a security release naming the user's line among others is kept", () => {
     const n = match(item("PHP 8.4.16 and 8.3.30 Released", "This is a security release."), [a("php", "8.3")], "php");
-    expect(n?.kind).toBe("release");
+    expect(n?.kind).toBe("fix");
   });
 
   test("a CVSS score is not read as a version line", () => {
@@ -248,7 +248,89 @@ describe("wording", () => {
     expect(match(item("[SECURITY] Django 5.1.9 released"), [a("django", "5.1")], "django")).not.toBeNull();
   });
 
-  test("an item that is neither a pre-announcement nor a release is a report", () => {
-    expect(match(item("Exploit seen for Drupal core"), [a("drupal/core", "10")], "drupal/core")?.kind).toBe("report");
+  test("anything that is not a pre-announcement is a fix", () => {
+    expect(match(item("Exploit seen for Drupal core"), [a("drupal/core", "10")], "drupal/core")?.kind).toBe("fix");
   });
+});
+
+describe("vulnerability notices only", () => {
+  test("a blog post that only mentions security in its body is dropped", () => {
+    const post = item("How we're using AI to make Next.js more secure", "We found a vulnerability class with AI and fixed it.");
+    expect(match(post, [a("next", "15")], "next")).toBeNull();
+  });
+
+  test("a version release whose body says it is a security release is kept, with the wording that decided it", () => {
+    const n = match(item("PHP 8.3.30 Released", "This is a security release."), [a("php", "8.3")], "php");
+    expect(n?.why).toBe("題名がリリース・予告で、本文「security release」");
+  });
+
+  test("security wording in the title is enough", () => {
+    expect(match(item("Next.js security update"), [a("next", "15")], "next")?.why).toBe("題名「security update」");
+  });
+
+  test("an upcoming release whose body says it fixes a vulnerability is a pre-announcement", () => {
+    const n = match(item("Upcoming Drupal core releases", "These releases will fix a critical vulnerability."), [a("drupal/core", "10")], "drupal/core");
+    expect(n?.kind).toBe("pre-announcement");
+  });
+});
+
+describe("releases named by their day", () => {
+  test("a critical update announced for a weekday is a pre-announcement", () => {
+    const n = match(
+      item("Critical PHP update on Wednesday, October 21, 2026 (14:00 UTC) - PSA-2026-10-20", "PHP has announced a critical PHP security release for Wednesday, October 21, 2026."),
+      [a("php", "8.3")],
+      "php",
+    );
+    expect(n?.kind).toBe("pre-announcement");
+  });
+
+  test("a policy post about security support is not a vulnerability notice", () => {
+    expect(match(item("Security support for Drupal core minor versions reduced to 8 months", "security fixes will take longer"), [a("drupal/core", "10")], "drupal/core")).toBeNull();
+  });
+});
+
+describe("release titles", () => {
+  test("an upcoming policy change is not a release, even if its body mentions vulnerabilities", () => {
+    expect(match(item("Upcoming changes to Drupal core support policy", "Security fixes for vulnerabilities will take longer."), [a("drupal/core", "10")], "drupal/core")).toBeNull();
+  });
+
+  test("a fix whose body names the day it shipped stays a fix", () => {
+    const n = match(item("PHP 8.3.30 Released", "This is a security release. It was the security release for Wednesday, October 21."), [a("php", "8.3")], "php");
+    expect(n?.kind).toBe("fix");
+  });
+});
+
+describe("security-only feeds and wording", () => {
+  test("a release title without security wording in the body is dropped", () => {
+    expect(match(item("PHP 8.3.30 Released", "Bug fixes and performance improvements."), [a("php", "8.3")], "php")).toBeNull();
+  });
+
+  test("an advisory feed keeps an item whose title has no security wording", () => {
+    const bulletin = item("Issue with nginx HTTP/2 Implementation", "nginx 1.27.4 is affected.");
+    expect(match(bulletin, [a("nginx", "1.27")])).toBeNull();
+    expect(match(bulletin, [a("nginx", "1.27")], undefined, true)?.why).toBe("脆弱性だけを載せる feed");
+  });
+
+  test("a title counting CVEs is security wording", () => {
+    expect(match(item("Ghostscript 10.08.0 fixes multiple CVEs"), [a("ghostscript")])?.why).toBe("題名「CVEs」");
+  });
+
+  test("the reason quotes whole words, not regex stems", () => {
+    const n = match(item("PHP 8.3.30 Released", "Fixes CVE-2026-1234, a remote vulnerability."), [a("php", "8.3")], "php");
+    expect(n?.why).toBe("題名がリリース・予告で、本文「CVE-2026-1234」");
+    expect(match(item("Next.js vulnerability in middleware"), [a("next", "15")], "next")?.why).toBe("題名「vulnerability」");
+    expect(match(item("Next.js flaw re-exploited in the wild"), [a("next", "15")], "next")?.why).toBe("題名「re-exploited」");
+  });
+});
+
+test("a versioned update or patch title with security wording in the body is kept", () => {
+  expect(match(item("PHP 8.3.30 update", "It fixes a critical vulnerability."), [a("php", "8.3")], "php")).not.toBeNull();
+  expect(match(item("Drupal core 10.3.5 patch", "It fixes a critical vulnerability."), [a("drupal/core", "10")], "drupal/core")).not.toBeNull();
+});
+
+
+test("a release that mentions platform support is still a release", () => {
+  expect(match(item("PHP 8.3.30 released with Windows support", "This security release fixes CVE-2026-1234."), [a("php", "8.3")], "php")).not.toBeNull();
+  expect(match(item("Next.js 15.2.1 released with Content Security Policy fixes", "It fixes a vulnerability."), [a("next", "15")], "next")).not.toBeNull();
+  expect(match(item("Security support for Drupal core minor versions reduced to 8 months", "security fixes will take longer"), [a("drupal/core", "10")], "drupal/core")).toBeNull();
 });

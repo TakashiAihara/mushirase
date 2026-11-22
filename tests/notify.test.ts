@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { atom, hitsLine, render, uploadAtom } from "../src/notify";
+import { atom, hitsLine, kindOf, render, uploadAtom } from "../src/notify";
 import type { Notice } from "../src/types";
 
 const notice = (feed: string, id: string): Notice => ({
@@ -47,4 +47,17 @@ test("credentials are refused for a plain-http upload URL that is not this machi
 
 test("credentials embedded in a plain-http upload URL are refused too", async () => {
   await expect(uploadAtom({ url: "http://writer:pw@dav.example.com/feed.atom" }, "x")).rejects.toThrow("credentials are only sent over https or to localhost");
+});
+
+test("notices recorded with the old kinds release and report are shown as fixes", () => {
+  for (const old of ["release", "report"]) {
+    const n = { ...notice("php", "1"), kind: old } as unknown as Notice;
+    expect(kindOf(n)).toBe("fix");
+    expect(render(n).title).toBe("[修正] Upcoming PHP Security Release");
+  }
+});
+
+test("the push names the wording that made the item a vulnerability notice", () => {
+  const msg = render({ ...notice("php", "1"), why: "題名「security release」" }).message;
+  expect(msg.split("\n")[1]).toBe("根拠: 題名「security release」");
 });

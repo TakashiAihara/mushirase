@@ -3,7 +3,10 @@ import { dirname } from "node:path";
 import { authHeader } from "./llm";
 import type { Notice } from "./types";
 
-const KIND_JA = { "pre-announcement": "予告", release: "修正版", report: "報告" } as const;
+const KIND_JA: Record<string, string> = { "pre-announcement": "予告", fix: "修正" };
+
+// Notices recorded before the two kinds existed carry "release" or "report"; both were fixes.
+export const kindOf = (n: Notice): Notice["kind"] => (n.kind === "pre-announcement" ? "pre-announcement" : "fix");
 
 export function hitsLine(n: Notice): string {
   const bySpec = new Map<string, Set<string>>();
@@ -17,8 +20,8 @@ export function hitsLine(n: Notice): string {
 
 export function render(n: Notice): { title: string; message: string } {
   return {
-    title: `[${KIND_JA[n.kind]}] ${n.item.title}`,
-    message: [`当たり: ${hitsLine(n)}`, n.note ? `判定: ${n.note}` : "", n.item.summary.slice(0, 300)].filter(Boolean).join("\n"),
+    title: `[${KIND_JA[kindOf(n)]}] ${n.item.title}`,
+    message: [`当たり: ${hitsLine(n)}`, n.why ? `根拠: ${n.why}` : "", n.note ? `判定: ${n.note}` : "", n.item.summary.slice(0, 300)].filter(Boolean).join("\n"),
   };
 }
 
