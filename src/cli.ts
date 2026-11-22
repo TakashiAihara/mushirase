@@ -11,7 +11,8 @@ import type { FeedItem, Kind, Notice } from "./types";
 
 type Config = {
   inventory: string[];
-  feeds: { name: string; url: string; product?: string }[];
+  // securityOnly: every item of the feed is a vulnerability notice (an advisory feed), so the title is not checked.
+  feeds: { name: string; url: string; product?: string; securityOnly?: boolean }[];
   maxAgeDays?: number;
   llm?: LlmConfig;
   ntfy?: NtfyConfig;
@@ -78,6 +79,9 @@ program
     const assets = loadInventory(cfg.inventory.map(at));
     const statePath = at(cfg.state ?? ".mushirase/state.json");
     const rssFeeds = cfg.rss ? [cfg.rss].flat() : [];
+    for (const r of rssFeeds) {
+      if (r.kind !== undefined && r.kind !== "pre-announcement" && r.kind !== "fix") throw new Error(`rss kind must be pre-announcement or fix, got ${r.kind}`);
+    }
     const state = loadState(statePath);
     const maxAge = Number(opts.maxAge ?? cfg.maxAgeDays ?? 7);
     if (!Number.isFinite(maxAge) || maxAge <= 0) throw new Error(`max age must be a positive number of days, got ${opts.maxAge ?? cfg.maxAgeDays}`);
@@ -105,7 +109,7 @@ program
         // NOTE: items without a parsable date are treated as new; add a per-feed date override if a feed lacks dates.
         if (!Number.isNaN(t) && t < cutoff) continue;
         checked++;
-        const n = match(item, assets, f.product);
+        const n = match(item, assets, f.product, f.securityOnly === true);
         if (!n) {
           if (opts.all) console.log(`  -  ${f.name}: ${item.title}`);
           if (!opts.dryRun) state.seen[key] = new Date().toISOString();

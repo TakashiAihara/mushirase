@@ -35,7 +35,16 @@ const CASE_SENSITIVE = new Set(["React", "Rails"]);
 const MIN_NAME_LEN = 4;
 
 // A bare "security" also fires on policy posts ("security reporting update"), so it only counts in these pairs or as a subject tag.
-const SECURITY = /security (?:release|update|fix|patch|issue|bulletin)|\[security\]|^security:|vulnerab|\bCVE-\d|advisor|exploit|malware|malicious|compromis|backdoor|supply[- ]chain|脆弱性/im;
+const SECURITY = /security (?:release|update|fix|patch|issue|bulletin)|\[security\]|^security:|vulnerab|\bCVE-\d|\bCVEs?\b|advisor|exploit|malware|malicious|compromis|backdoor|supply[- ]chain|脆弱性/im;
+
+// The match of a stem ("vulnerab", "CVE-2") widened to the whole word, so the reason reads as text.
+function wording(text: string, m: RegExpMatchArray): string {
+  const start = m.index ?? 0;
+  const end = start + m[0].length;
+  const head = text.slice(0, start).match(/[\w-]*$/)?.[0] ?? "";
+  const tail = text.slice(end).match(/^[\w-]*/)?.[0] ?? "";
+  return text.slice(start - head.length, end + tail.length);
+}
 
 // A malicious version is new by definition, and a manifest range like ^4.3 can resolve to it.
 // NOTE: decided per item, not per mention, so a supply-chain post citing another version of the same library still hits.
@@ -58,12 +67,13 @@ const VERSION_RELEASE = /\b\d+\.\d+(?:\.\d+)?\b.*\breleas(?:e|ed|es)\b|\breleas(
 
 // A post is about a vulnerability when its title says so, or when its title announces a release (upcoming, or a version)
 // and its body says that release is a security one. Blog posts that only mention security in the body ("more secure") do not pass.
-function securityWording(item: FeedItem): string | null {
+function securityWording(item: FeedItem, securityOnly: boolean): string | null {
+  if (securityOnly) return "脆弱性だけを載せる feed";
   const inTitle = item.title.match(SECURITY);
-  if (inTitle) return `題名「${inTitle[0]}」`;
+  if (inTitle) return `題名「${wording(item.title, inTitle)}」`;
   if (!releaseTitle(item.title)) return null;
   const inBody = item.summary.match(SECURITY);
-  return inBody ? `題名がリリース・予告で、本文「${inBody[0]}」` : null;
+  return inBody ? `題名がリリース・予告で、本文「${wording(item.summary, inBody)}」` : null;
 }
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -116,9 +126,9 @@ function kindOf(item: FeedItem): Kind {
 }
 
 // product: the feed belongs to one product, so its items need no mention of the name; version lines still apply.
-export function match(item: FeedItem, assets: Asset[], product?: string): Notice | null {
+export function match(item: FeedItem, assets: Asset[], product?: string, securityOnly = false): Notice | null {
   const text = `${item.title}\n${item.summary}`;
-  const why = securityWording(item);
+  const why = securityWording(item, securityOnly);
   if (!why) return null;
   const supplyChain = SUPPLY_CHAIN.test(text);
 

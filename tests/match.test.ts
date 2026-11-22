@@ -299,3 +299,26 @@ describe("release titles", () => {
     expect(n?.kind).toBe("fix");
   });
 });
+
+describe("security-only feeds and wording", () => {
+  test("a release title without security wording in the body is dropped", () => {
+    expect(match(item("PHP 8.3.30 Released", "Bug fixes and performance improvements."), [a("php", "8.3")], "php")).toBeNull();
+  });
+
+  test("an advisory feed keeps an item whose title has no security wording", () => {
+    const bulletin = item("Issue with nginx HTTP/2 Implementation", "nginx 1.27.4 is affected.");
+    expect(match(bulletin, [a("nginx", "1.27")])).toBeNull();
+    expect(match(bulletin, [a("nginx", "1.27")], undefined, true)?.why).toBe("脆弱性だけを載せる feed");
+  });
+
+  test("a title counting CVEs is security wording", () => {
+    expect(match(item("Ghostscript 10.08.0 fixes multiple CVEs"), [a("ghostscript")])?.why).toBe("題名「CVEs」");
+  });
+
+  test("the reason quotes whole words, not regex stems", () => {
+    const n = match(item("PHP 8.3.30 Released", "Fixes CVE-2026-1234, a remote vulnerability."), [a("php", "8.3")], "php");
+    expect(n?.why).toBe("題名がリリース・予告で、本文「CVE-2026-1234」");
+    expect(match(item("Next.js vulnerability in middleware"), [a("next", "15")], "next")?.why).toBe("題名「vulnerability」");
+    expect(match(item("Next.js flaw re-exploited in the wild"), [a("next", "15")], "next")?.why).toBe("題名「re-exploited」");
+  });
+});

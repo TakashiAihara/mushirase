@@ -7,11 +7,11 @@ maxAgeDays: 7
 feeds:
   - { name: php, url: "https://www.php.net/feed.atom", product: php }
   - { name: nextjs, url: "https://nextjs.org/feed.xml", product: next }
-  - { name: nodejs, url: "https://nodejs.org/en/feed/vulnerability.xml", product: node }
+  - { name: nodejs, url: "https://nodejs.org/en/feed/vulnerability.xml", product: node, securityOnly: true }
   - { name: drupal-psa, url: "https://www.drupal.org/security/psa/rss.xml", product: drupal/core }
   - { name: django, url: "https://www.djangoproject.com/rss/weblog/", product: django }
   - { name: oss-security, url: "https://seclists.org/rss/oss-sec.rss" }
-  - { name: aws-bulletins, url: "https://aws.amazon.com/security/security-bulletins/rss/feed/" }
+  - { name: aws-bulletins, url: "https://aws.amazon.com/security/security-bulletins/rss/feed/", securityOnly: true }
   - { name: socket, url: "https://socket.dev/api/blog/feed.atom" }
 
 ntfy: { url: "https://ntfy.example.com", topic: mushirase, tokenEnv: MUSHIRASE_NTFY_TOKEN }

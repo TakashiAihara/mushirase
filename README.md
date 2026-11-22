@@ -23,7 +23,7 @@ flowchart LR
 
 The chart leaves out two exceptions listed below: runtimes outside their own feed need a version line, and supply-chain items skip the version check for libraries.
 
-- An item counts as a vulnerability notice when its title has security wording, or its title announces a release (upcoming, on a named day, or a version) and its body has security wording. Posts that only mention security in the body ("how we make X more secure", policy updates) are dropped. Each push says which wording decided it (`根拠`).
+- An item counts as a vulnerability notice when its title has security wording, or its title announces a release (upcoming, on a named day, or a version) and its body has security wording. Posts that only mention security in the body ("how we make X more secure", policy updates) are dropped. A feed marked `securityOnly` (an advisory feed such as AWS security bulletins) skips this check, since its titles often name only the issue. Each push says which wording decided it (`根拠`).
 - Notices are of two kinds: a pre-announcement (upcoming, scheduled, or named by its day) or a fix (everything else).
 - Inventory: hand-written YAML for what no manifest declares, plus repository checkouts scanned for `package.json`, `composer.json`, `go.mod`, `requirements.txt`, `pyproject.toml`, `Dockerfile*`, `.mise.toml`, `.tool-versions` (direct dependencies only). Quote versions in YAML (`"8.10"`); an unquoted number is rejected because `8.10` would be read as `8.1`.
 - Versions are npm semver ranges and are compared with [semver](https://github.com/npm/node-semver) (`intersects`). npm specs are kept as written, and specs that are not ranges (`workspace:*`, `latest`, `file:`) leave the asset without a version, so it matches by name. Composer and Python keep pins only (`1.2.3`, `==1.2.3`; a partial `==1.4` becomes the line `1.4`); their ranges (`~8.3`, `>=5.1`, `^7.4 | ^8.0`) are not semver and leave the asset without a version, which errs towards pushing. Dockerfile tags, `.mise.toml` and `.tool-versions` give a line such as `8.3` (= `8.3.x`); zero-padded tags (`24.04`, `08.3`) give none.
@@ -77,11 +77,11 @@ See `examples/mushirase.yaml` and `examples/stack.yaml`. Paths are relative to t
 | key | meaning |
 |---|---|
 | `inventory` | YAML files (`assets: [{name, version}]`) and/or repository checkouts |
-| `feeds` | `{name, url, product?}` |
+| `feeds` | `{name, url, product?, securityOnly?}`. `securityOnly: true` for feeds whose every item is a vulnerability notice |
 | `maxAgeDays` | ignore older items (default 7) |
 | `llm` | `{url, model, apiKeyEnv?, reasoningEffort?}` for any OpenAI-compatible endpoint |
 | `ntfy` | `{url, topic, tokenEnv?}` |
-| `rss` | `{path?, title?, kind?, upload?}` or a list of them: an Atom feed of what was pushed (last 100). `kind: pre-announcement` or `kind: fix` keeps only that kind, so a list gives one feed per kind. `upload: {url, userEnv?, passwordEnv?}` PUTs it after each run, e.g. to a WebDAV folder the run may write (Create + Update) but not read. Without both env names it sends no credentials; with them, only https or localhost URLs are accepted, since basic auth is not encrypted |
+| `rss` | `{path?, title?, kind?, upload?}` or a list of them: an Atom feed of what was pushed (last 100). `kind: pre-announcement` or `kind: fix` keeps only that kind, so a list gives one feed per kind; each shows the items of its kind among the last 100 pushed. `upload: {url, userEnv?, passwordEnv?}` PUTs it after each run, e.g. to a WebDAV folder the run may write (Create + Update) but not read. Without both env names it sends no credentials; with them, only https or localhost URLs are accepted, since basic auth is not encrypted |
 | `state` | state file (default `.mushirase/state.json`) |
 
 The LLM stage is off by default. When it fails, the keyword hit is kept and marked, so an outage never hides a notice; an item it rejects is not recorded and is judged again on every run while it stays in the window (for items without a date, as long as the feed lists them). A small local model (qwen3.5:9b without thinking) dropped 8 of 13 must-read items in our trial, so do not enable it with a model you have not measured. Feed text goes into the prompt as is, so a crafted post can talk the model into rejecting itself.
