@@ -8,7 +8,7 @@ Type=oneshot
 EnvironmentFile=/etc/mushirase/mushirase.env
 # ProtectHome hides home directories, so bun and the checkout must live outside them.
 ExecStart=/usr/local/bin/bun /opt/mushirase/src/cli.ts run -c /etc/mushirase/mushirase.yaml
-TimeoutStartSec=300
+TimeoutStartSec=15min
 StateDirectory=mushirase
 DynamicUser=yes
 NoNewPrivileges=yes

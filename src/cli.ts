@@ -134,6 +134,8 @@ program
       const now = new Date().toISOString();
       state.seen[seenKey(n.item)] = now;
       state.sent.unshift({ notice: n, at: now });
+      // Saved after every push: a run stopped midway (a scheduler timeout) must not push the same item again.
+      saveState(statePath, state);
     }
 
     console.log(`checked ${checked} new items against ${assets.length} assets: ${notices.length} hit, ${failures} failure(s)${opts.dryRun ? " (dry-run)" : ""}`);
