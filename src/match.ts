@@ -61,7 +61,8 @@ const RELEASE_WORD = /\breleas\w*|\bupdates?\b|\bpatch\w*/i;
 
 // The title announces a release: upcoming / on a named day / with a version, and says release, update or patch
 // ("Upcoming changes to the support policy" and "10.3 patch support policy update" do not).
-const NOT_RELEASE = /\bpolic(?:y|ies)\b|\bsupport\b|end[- ]of[- ]life|\blifecycle\b/i;
+// Only support in the sense of a policy: "released with Windows support" is still a release.
+const NOT_RELEASE = /\bpolic(?:y|ies)\b|\bsupport (?:policy|period|window|for)\b|end[- ]of[- ]life|\blifecycle\b/i;
 const releaseTitle = (title: string) =>
   RELEASE_WORD.test(title) && !NOT_RELEASE.test(title) && (PRE.test(title) || ON_DAY.test(title) || VERSION_RELEASE.test(title));
 

@@ -331,3 +331,8 @@ test("a versioned update or patch title with security wording in the body is kep
 test("a support policy post with a version and patch in its title is not a release", () => {
   expect(match(item("Drupal 10.3 patch support policy update", "Security fixes for vulnerabilities will take longer."), [a("drupal/core", "10")], "drupal/core")).toBeNull();
 });
+
+test("a release that mentions platform support is still a release", () => {
+  expect(match(item("PHP 8.3.30 released with Windows support", "This security release fixes CVE-2026-1234."), [a("php", "8.3")], "php")).not.toBeNull();
+  expect(match(item("Security support for Drupal core minor versions reduced to 8 months", "security fixes will take longer"), [a("drupal/core", "10")], "drupal/core")).toBeNull();
+});
